@@ -46,7 +46,43 @@ The on-sky status label shows the phase-day bin and the continuous time differen
 
 Stellarium's public scripting API does not expose the arbitrary celestial-sphere polyline drawing needed for these contours. A compiled plugin can use `StelPainter` and the Alt/Az projector directly.
 
-## Build/install strategy
+## Install the prebuilt plugin
+
+The prebuilt Linux plugin has been tested with Stellarium 26.2 on Fedora 44
+x86_64 using Qt 6.11.1. Stellarium plugins are ABI-sensitive; if Stellarium
+cannot load this binary, use the source-build instructions below against your
+exact Stellarium installation.
+
+Install the latest release for your user account:
+
+```bash
+mkdir -p "$HOME/.stellarium/modules/VisibilityContours"
+curl -fL \
+  https://github.com/qlifee/VisibilityContours/releases/latest/download/libVisibilityContours.so \
+  -o "$HOME/.stellarium/modules/VisibilityContours/libVisibilityContours.so"
+```
+
+Restart Stellarium after installation. The plugin starts automatically by
+default. If it does not, open **Configuration window → Plugins → Visibility
+Contours**, select **Load at startup**, and restart Stellarium again.
+
+To check the downloaded file against the checksum published in the release:
+
+```bash
+sha256sum "$HOME/.stellarium/modules/VisibilityContours/libVisibilityContours.so"
+```
+
+To update, run the download command again. To uninstall:
+
+```bash
+rm "$HOME/.stellarium/modules/VisibilityContours/libVisibilityContours.so"
+rmdir "$HOME/.stellarium/modules/VisibilityContours"
+```
+
+Release downloads and compatibility notes are available on the
+[GitHub Releases page](https://github.com/qlifee/VisibilityContours/releases).
+
+## Build from source
 
 VisibilityContours is a standalone dynamic plugin. It requires the source and a
 configured build tree for the exact Stellarium 26.2 / Qt 6 installation with

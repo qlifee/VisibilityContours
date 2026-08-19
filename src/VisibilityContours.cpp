@@ -215,7 +215,7 @@ StelPluginInfo VisibilityContoursStelPluginInterface::getPluginInfo() const
     StelPluginInfo info;
     info.id = "VisibilityContours";
     info.displayedName = "Visibility Contours";
-    info.authors = "Custom plugin for Stellarium";
+    info.authors = "qlifee";
     info.contact = "";
     info.description = "Draws V=1.30, 2.00, 3.50 and 5.65 Odeh visibility contours around the Sun near lunar conjunction.";
     info.version = VISIBILITYCONTOURS_PLUGIN_VERSION;
