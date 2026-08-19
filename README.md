@@ -48,29 +48,32 @@ Stellarium's public scripting API does not expose the arbitrary celestial-sphere
 
 ## Build/install strategy
 
-A Stellarium binary plugin must be ABI-compatible with the exact Stellarium/Qt build you run. The safest first build is therefore **in the matching Stellarium source tree**.
+VisibilityContours is a standalone dynamic plugin. It requires the source and a
+configured build tree for the exact Stellarium 26.2 / Qt 6 installation with
+which it will be used, but it does not modify or rebuild Stellarium.
 
-Check your installed version:
-
-```bash
-stellarium --version
-```
-
-Get the matching Stellarium source version, then run:
+Configure and build it out of tree:
 
 ```bash
-./add_to_stellarium_source.sh /path/to/stellarium-source
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSTELLARIUM_SOURCE_DIR=/path/to/stellarium-26.2 \
+  -DSTELLARIUM_BUILD_DIR=/path/to/stellarium-26.2/build
+cmake --build build --parallel
 ```
 
-That copies this directory to `plugins/VisibilityContours` and adds:
+Stage the installation before installing it for the current user:
 
-```cmake
-ADD_PLUGIN(VisibilityContours 1)
+```bash
+cmake --install build --prefix /tmp/visibility-contours-stage
+cmake --install build --prefix "$HOME/.stellarium"
 ```
 
-to Stellarium's root `CMakeLists.txt` immediately after the `SimpleDrawLine` demo plugin registration.
-
-Then configure/build Stellarium normally. For Fedora, use the build dependencies and instructions appropriate to the exact Stellarium release/Qt version you have installed.
+On Linux the installed plugin is
+`~/.stellarium/modules/VisibilityContours/libVisibilityContours.so`.
+Stellarium resolves the plugin's Stellarium API symbols when it loads the
+module. The plugin must therefore be rebuilt for ABI-incompatible Stellarium,
+Qt, or compiler versions.
 
 ## Easy constants to change
 
