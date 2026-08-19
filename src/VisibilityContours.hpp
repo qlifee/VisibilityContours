@@ -1,16 +1,16 @@
-#ifndef ODEHCONTOURS_HPP
-#define ODEHCONTOURS_HPP
+#ifndef VISIBILITYCONTOURS_HPP
+#define VISIBILITYCONTOURS_HPP
 
 #include "StelModule.hpp"
 #include "StelPluginInterface.hpp"
 
 #include <QObject>
 
-class OdehContours : public StelModule
+class VisibilityContours : public StelModule
 {
 public:
-    OdehContours();
-    ~OdehContours() override;
+    VisibilityContours();
+    ~VisibilityContours() override;
 
     void init() override;
     void draw(StelCore* core) override;
@@ -21,7 +21,7 @@ private:
     double cachedConjunctionJDE;
 };
 
-class OdehContoursStelPluginInterface : public QObject, public StelPluginInterface
+class VisibilityContoursStelPluginInterface : public QObject, public StelPluginInterface
 {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID StelPluginInterface_iid)
@@ -32,4 +32,4 @@ public:
     StelPluginInfo getPluginInfo() const override;
 };
 
-#endif // ODEHCONTOURS_HPP
+#endif // VISIBILITYCONTOURS_HPP

@@ -1,4 +1,4 @@
-#include "OdehContours.hpp"
+#include "VisibilityContours.hpp"
 
 #include "Planet.hpp"
 #include "SolarSystem.hpp"
@@ -205,40 +205,40 @@ Vec3d altAzVector(double azRad, double altRad)
 
 } // namespace
 
-StelModule* OdehContoursStelPluginInterface::getStelModule() const
+StelModule* VisibilityContoursStelPluginInterface::getStelModule() const
 {
-    return new OdehContours();
+    return new VisibilityContours();
 }
 
-StelPluginInfo OdehContoursStelPluginInterface::getPluginInfo() const
+StelPluginInfo VisibilityContoursStelPluginInterface::getPluginInfo() const
 {
     StelPluginInfo info;
-    info.id = "OdehContours";
-    info.displayedName = "Odeh crescent visibility contours";
+    info.id = "VisibilityContours";
+    info.displayedName = "Visibility Contours";
     info.authors = "Custom plugin for Stellarium";
     info.contact = "";
     info.description = "Draws V=1.30, 2.00, 3.50 and 5.65 Odeh visibility contours around the Sun near lunar conjunction.";
-    info.version = ODEHCONTOURS_PLUGIN_VERSION;
-    info.license = ODEHCONTOURS_PLUGIN_LICENSE;
+    info.version = VISIBILITYCONTOURS_PLUGIN_VERSION;
+    info.license = VISIBILITYCONTOURS_PLUGIN_LICENSE;
     info.startByDefault = true;
     return info;
 }
 
-OdehContours::OdehContours()
+VisibilityContours::VisibilityContours()
     : cachedForJDE(std::numeric_limits<double>::quiet_NaN())
     , cachedConjunctionJDE(std::numeric_limits<double>::quiet_NaN())
 {
-    setObjectName("OdehContours");
+    setObjectName("VisibilityContours");
 }
 
-OdehContours::~OdehContours() = default;
+VisibilityContours::~VisibilityContours() = default;
 
-void OdehContours::init()
+void VisibilityContours::init()
 {
-    qInfo() << "OdehContours initialized";
+    qInfo() << "VisibilityContours initialized";
 }
 
-double OdehContours::getCallOrder(StelModuleActionName actionName) const
+double VisibilityContours::getCallOrder(StelModuleActionName actionName) const
 {
     if (actionName == StelModule::ActionDraw)
     {
@@ -248,7 +248,7 @@ double OdehContours::getCallOrder(StelModuleActionName actionName) const
     return 0.0;
 }
 
-void OdehContours::draw(StelCore* core)
+void VisibilityContours::draw(StelCore* core)
 {
     if (!core)
         return;

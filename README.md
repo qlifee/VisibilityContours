@@ -1,4 +1,4 @@
-# OdehContours for Stellarium
+# VisibilityContours for Stellarium
 
 Custom Stellarium plugin that draws four crescent-visibility contours around the Sun:
 
@@ -62,10 +62,10 @@ Get the matching Stellarium source version, then run:
 ./add_to_stellarium_source.sh /path/to/stellarium-source
 ```
 
-That copies this directory to `plugins/OdehContours` and adds:
+That copies this directory to `plugins/VisibilityContours` and adds:
 
 ```cmake
-ADD_PLUGIN(OdehContours 1)
+ADD_PLUGIN(VisibilityContours 1)
 ```
 
 to Stellarium's root `CMakeLists.txt` immediately after the `SimpleDrawLine` demo plugin registration.
@@ -74,7 +74,7 @@ Then configure/build Stellarium normally. For Fedora, use the build dependencies
 
 ## Easy constants to change
 
-At the top of `src/OdehContours.cpp` you can change:
+At the top of `src/VisibilityContours.cpp` you can change:
 
 - `SUNSET_CENTER_ALT_DEG`
 - `ARCV_MIN_DEG`, `ARCV_MAX_DEG`
