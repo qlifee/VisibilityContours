@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(VisibilityContours VERSION 0.1.0 LANGUAGES CXX)
+project(VisibilityContours VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -23,11 +24,16 @@ if(NOT EXISTS "${STELLARIUM_BUILD_DIR}/CMakeCache.txt")
         "STELLARIUM_BUILD_DIR must point to a configured Stellarium 26.2 build tree")
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui OpenGL)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL)
 
 add_library(VisibilityContours MODULE
     src/VisibilityContours.cpp
     src/VisibilityContours.hpp
+    src/VisibilityContoursDialog.cpp
+    src/VisibilityContoursDialog.hpp
+    src/VisibilityContoursDialog.ui
+    src/VisibilityMath.cpp
+    src/VisibilityMath.hpp
 )
 
 target_compile_definitions(VisibilityContours PRIVATE
@@ -49,8 +55,20 @@ target_include_directories(VisibilityContours PRIVATE
 target_link_libraries(VisibilityContours PRIVATE
     Qt6::Core
     Qt6::Gui
+    Qt6::Widgets
     Qt6::OpenGL
 )
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(VisibilityMathTests
+        tests/VisibilityMathTests.cpp
+        src/VisibilityMath.cpp
+    )
+    target_include_directories(VisibilityMathTests PRIVATE src)
+    target_link_libraries(VisibilityMathTests PRIVATE Qt6::Core)
+    add_test(NAME VisibilityMathTests COMMAND VisibilityMathTests)
+endif()
 
 if(APPLE)
     target_link_options(VisibilityContours PRIVATE "-undefined" "dynamic_lookup")

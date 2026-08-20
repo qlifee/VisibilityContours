@@ -1,11 +1,36 @@
 # VisibilityContours for Stellarium
 
-Custom Stellarium plugin that draws four crescent-visibility contours around the Sun:
+Standalone Stellarium plugin that draws selectable crescent-visibility bands
+around the Sun and adds observational visibility information when the Moon is
+selected.
 
-- V = 1.30
-- V = 2.00
-- V = 3.50
-- V = 5.65
+- Current version: **0.2.0**
+- Author: **Sultan ALKHULAIFI**
+- Contact: **qlifee@gmail.com**
+
+The Odeh scheme uses contiguous categories:
+
+- blue: `-0.96 ≤ V < 2.00`
+- magenta: `2.00 ≤ V < 5.65`
+- green: `V ≥ 5.65`
+
+The Yallop scheme converts the original q boundaries `-0.232`, `-0.160`,
+`-0.014`, and `0.216` to equivalent Odeh V values using the Moon's current
+horizontal parallax. This makes its blue, magenta, yellow, and green categories
+date-dependent and contiguous.
+
+Yallop is selected on every plugin startup, regardless of a previously saved
+criterion. Users can switch to Odeh for the current session. All contour labels
+and information-panel values are equivalent Odeh V values, including when
+Yallop is selected.
+
+Open **Configuration window → Plugins → Visibility Contours → Configure** to
+select Odeh or Yallop contours and optionally enable translucent band fills.
+The fill setting persists across restarts; the criterion resets to Yallop each
+time the plugin starts. The main plugin page contains the calculation note and
+reference links. Select the Moon to see `V now`, the nearest valid
+morning/evening best time, and `V at best time` in Stellarium's normal
+object-information panel.
 
 ## Geometry
 
@@ -40,7 +65,31 @@ The overlay is drawn only when:
 
 The conjunction is found numerically from Stellarium's own Moon/Earth ecliptic position functions at arbitrary JDE; the plugin does not change the Stellarium clock while searching.
 
-The on-sky status label shows the phase-day bin and the continuous time difference from conjunction in days.
+The on-sky `Conjunction day` status label shows the phase-day bin and the
+continuous time difference from conjunction in days. Contour V labels are
+displayed to two decimal places.
+
+## Best time and observational V
+
+The information-panel V uses geometric topocentric Sun/Moon altitudes and the
+actual illuminated crescent width derived from Stellarium's illuminated
+fraction and apparent lunar diameter. Atmospheric refraction is not used.
+
+Evening best time is sunset plus `4/9` of the positive Moon-set lag. Morning
+best time is sunrise minus `4/9` of the positive Moon-rise lag. The plugin
+calculates both valid candidates and displays the one nearest the current
+Stellarium clock, in the observer's local civil time.
+The information panel shows time only, formatted like `17h55m15s`.
+
+## Calculation references
+
+All contours and displayed V values use the Odeh visibility equation, with
+airless geometric topocentric ARCV and topocentric crescent width W. When
+Yallop is selected, its q boundaries are converted to equivalent Odeh V
+boundaries using the Moon's current horizontal parallax.
+
+- Mohammad Sh. Odeh, [*New Criterion for Lunar Crescent Visibility*](https://doi.org/10.1007/s10686-005-9002-5), *Experimental Astronomy* 18, 39–64.
+- B. D. Yallop, [*A Method for Predicting the First Sighting of the New Crescent Moon*](https://assets.admiralty.co.uk/public/documents/2025-08/HMNAO%20Technical%20Notes%20Index.pdf?VersionId=DfKow0usAp5ANPUBA_pWq4.DJ6nbkX2q), NAO Technical Note No. 69, 1997, updated 1998.
 
 ## Why this is a plugin, not an .ssc script
 
@@ -118,7 +167,7 @@ At the top of `src/VisibilityContours.cpp` you can change:
 - `SUNSET_CENTER_ALT_DEG`
 - `ARCV_MIN_DEG`, `ARCV_MAX_DEG`
 - `DAZ_MIN_DEG`, `DAZ_MAX_DEG`, `DAZ_STEP_DEG`
-- the four contour V values and their RGB colors
+- the criterion boundary values and RGB colors
 - line width
 
 ## Version target
