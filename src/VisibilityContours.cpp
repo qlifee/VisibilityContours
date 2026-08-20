@@ -589,8 +589,8 @@ void VisibilityContours::draw(StelCore* core)
     const double daysFromConjunction = jde - cachedConjunctionJDE;
     const int dayIndex = static_cast<int>(std::lround(daysFromConjunction));
 
-    // Five requested phase-day bins only: -2, -1, 0, +1, +2.
-    if (dayIndex < -2 || dayIndex > 2)
+    // Seven requested phase-day bins only: -3, -2, -1, 0, +1, +2, +3.
+    if (dayIndex < -3 || dayIndex > 3)
         return;
 
     const StelProjectorP projector = core->getProjection(StelCore::FrameAltAz,

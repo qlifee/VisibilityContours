@@ -4,7 +4,7 @@ Standalone Stellarium plugin that draws selectable crescent-visibility bands
 around the Sun and adds observational visibility information when the Moon is
 selected.
 
-- Current version: **0.2.0**
+- Current version: **0.2.5**
 
 The Odeh scheme uses contiguous categories:
 
@@ -58,8 +58,8 @@ The overlay is drawn only when:
 
 1. Observer is on Earth.
 2. The geometric altitude of the Sun's center is below `-0.8333°` (conventional sunrise/sunset approximation).
-3. The time belongs to one of the five nearest-integer 24-hour bins around the nearest geocentric longitude conjunction:
-   `day -2, -1, 0, +1, +2`.
+3. The time belongs to one of the seven nearest-integer 24-hour bins around the nearest geocentric longitude conjunction:
+   `day -3, -2, -1, 0, +1, +2, +3`.
 
 The conjunction is found numerically from Stellarium's own Moon/Earth ecliptic position functions at arbitrary JDE; the plugin does not change the Stellarium clock while searching.
 
