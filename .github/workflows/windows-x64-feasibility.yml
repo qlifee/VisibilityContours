@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Check out VisibilityContours
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install matching Qt
         shell: pwsh
@@ -39,7 +39,18 @@ jobs:
           Invoke-WebRequest -Uri $sourceUrl -OutFile stellarium-source.zip
           Invoke-WebRequest -Uri $installerUrl -OutFile stellarium-installer.exe
           Expand-Archive stellarium-source.zip -DestinationPath sdk
-          7z x stellarium-installer.exe -oinstaller -y
+          $installDir = Join-Path $PWD "installer"
+          $installer = Start-Process -FilePath .\stellarium-installer.exe -Wait -PassThru `
+            -ArgumentList @(
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART",
+              "/SP-",
+              "/DIR=$installDir"
+            )
+          if ($installer.ExitCode -ne 0) {
+            throw "The official Stellarium installer exited with code $($installer.ExitCode)"
+          }
 
       - name: Locate MSVC inspection tools
         shell: pwsh
@@ -160,7 +171,7 @@ jobs:
 
       - name: Publish diagnostic report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: windows-x64-feasibility
           path: |
