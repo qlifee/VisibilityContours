@@ -128,4 +128,58 @@ std::optional<double> nearestTime(double currentJd,
         return evening;
     return morning;
 }
+
+int conjunctionDayIndex(double eventJde, double conjunctionJde)
+{
+    if (!std::isfinite(eventJde) || !std::isfinite(conjunctionJde))
+        return std::numeric_limits<int>::min();
+    return static_cast<int>(std::lround(eventJde - conjunctionJde));
+}
+
+bool validCrescentEvent(double eventJd, double eventJde, double conjunctionJde,
+                        double moonAltitudeDeg)
+{
+    if (!std::isfinite(eventJd) || !std::isfinite(moonAltitudeDeg)
+        || !(moonAltitudeDeg > 0.0))
+        return false;
+    const int dayIndex = conjunctionDayIndex(eventJde, conjunctionJde);
+    return dayIndex >= -3 && dayIndex <= 3;
+}
+
+void sortCrescentEvents(std::vector<CrescentEvent>& events)
+{
+    std::sort(events.begin(), events.end(), [](const CrescentEvent& a,
+                                                const CrescentEvent& b)
+    {
+        if (a.jd != b.jd)
+            return a.jd < b.jd;
+        return a.kind == CrescentEventKind::Morning
+               && b.kind == CrescentEventKind::Evening;
+    });
+}
+
+std::optional<CrescentEvent> adjacentCrescentEvent(
+    const std::vector<CrescentEvent>& events, double currentJd,
+    int direction, double epsilonDays)
+{
+    if (!std::isfinite(currentJd) || !(epsilonDays >= 0.0) || direction == 0)
+        return std::nullopt;
+
+    if (direction > 0)
+    {
+        for (const CrescentEvent& event : events)
+        {
+            if (event.jd > currentJd + epsilonDays)
+                return event;
+        }
+        return std::nullopt;
+    }
+
+    for (auto it = events.rbegin(); it != events.rend(); ++it)
+    {
+        if (it->jd < currentJd - epsilonDays)
+            return *it;
+    }
+    return std::nullopt;
+}
 }

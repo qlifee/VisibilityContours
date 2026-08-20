@@ -7,6 +7,7 @@
 #include <QObject>
 
 class QSettings;
+class CrescentNavigatorDialog;
 class VisibilityContoursDialog;
 
 class VisibilityContours : public StelModule
@@ -14,6 +15,8 @@ class VisibilityContours : public StelModule
     Q_OBJECT
     Q_PROPERTY(QString criterion READ criterion WRITE setCriterion NOTIFY criterionChanged)
     Q_PROPERTY(bool fillBands READ fillBands WRITE setFillBands NOTIFY fillBandsChanged)
+    Q_PROPERTY(bool navigatorVisible READ navigatorVisible WRITE setNavigatorVisible
+               NOTIFY navigatorVisibleChanged)
 
 public:
     VisibilityContours();
@@ -26,19 +29,26 @@ public:
 
     QString criterion() const;
     bool fillBands() const;
+    bool navigatorVisible() const;
 
 public slots:
     void setCriterion(const QString& value);
     void setFillBands(bool enabled);
+    void setNavigatorVisible(bool visible);
+    void navigateForward();
+    void navigateBackward();
 
 signals:
     void criterionChanged(const QString& value);
     void fillBandsChanged(bool enabled);
+    void navigatorVisibleChanged(bool visible);
 
 private:
     void readSettings();
     void saveSettings() const;
     void addMoonInformation(StelCore* core);
+    void navigateToCrescent(int direction);
+    void updateNavigatorAvailability(StelCore* core);
 
     double cachedForJDE;
     double cachedConjunctionJDE;
@@ -57,8 +67,11 @@ private:
     bool cachedBestAvailable;
     QString selectedCriterion;
     bool bandsFilled;
+    bool navigatorShown;
+    bool navigatorEarthAvailable;
     QSettings* settings;
     VisibilityContoursDialog* configDialog;
+    CrescentNavigatorDialog* navigatorDialog;
 };
 
 class VisibilityContoursStelPluginInterface : public QObject, public StelPluginInterface

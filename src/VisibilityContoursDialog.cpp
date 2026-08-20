@@ -1,5 +1,6 @@
 #include "VisibilityContoursDialog.hpp"
 
+#include "Dialog.hpp"
 #include "VisibilityContours.hpp"
 #include "ui_VisibilityContoursDialog.h"
 
@@ -28,11 +29,20 @@ void VisibilityContoursDialog::createDialogContent()
     const int index = ui->criterionCombo->findData(module->criterion());
     ui->criterionCombo->setCurrentIndex(index < 0 ? 0 : index);
     ui->fillBandsCheck->setChecked(module->fillBands());
+    ui->navigatorCheck->setChecked(module->navigatorVisible());
 
+    connect(ui->titleBar, &TitleBar::closeClicked,
+            this, &StelDialog::close);
+    connect(ui->titleBar, &TitleBar::movedTo,
+            this, &StelDialog::handleMovedTo);
     connect(ui->criterionCombo, &QComboBox::currentIndexChanged, this,
             [this](int i) { module->setCriterion(ui->criterionCombo->itemData(i).toString()); });
     connect(ui->fillBandsCheck, &QCheckBox::toggled,
             module, &VisibilityContours::setFillBands);
+    connect(ui->navigatorCheck, &QCheckBox::toggled,
+            module, &VisibilityContours::setNavigatorVisible);
+    connect(module, &VisibilityContours::navigatorVisibleChanged,
+            ui->navigatorCheck, &QCheckBox::setChecked);
     connect(ui->closeButton, &QPushButton::clicked, this, &StelDialog::close);
 }
 

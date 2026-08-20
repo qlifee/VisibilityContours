@@ -2,19 +2,110 @@
 <ui version="4.0">
  <class>VisibilityContoursDialog</class>
  <widget class="QWidget" name="VisibilityContoursDialog">
-  <property name="windowTitle"><string>Visibility Contours</string></property>
-  <layout class="QVBoxLayout" name="verticalLayout">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>320</width>
+    <height>230</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>300</width>
+    <height>0</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>Visibility Contours</string>
+  </property>
+  <layout class="QVBoxLayout" name="outerLayout">
+   <property name="spacing">
+    <number>0</number>
+   </property>
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
    <item>
-    <layout class="QFormLayout" name="formLayout">
-     <item row="0" column="0"><widget class="QLabel" name="criterionLabel"><property name="text"><string>Criterion:</string></property></widget></item>
-     <item row="0" column="1"><widget class="QComboBox" name="criterionCombo"/></item>
-    </layout>
+    <widget class="TitleBar" name="titleBar">
+     <property name="title">
+      <string>Visibility Contours</string>
+     </property>
+    </widget>
    </item>
-   <item><widget class="QCheckBox" name="fillBandsCheck"><property name="text"><string>Fill visibility bands</string></property></widget></item>
-   <item><spacer name="verticalSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
-   <item><widget class="QPushButton" name="closeButton"><property name="text"><string>Close</string></property></widget></item>
+   <item>
+    <widget class="QWidget" name="contentWidget" native="true">
+     <layout class="QVBoxLayout" name="contentLayout">
+      <item>
+       <layout class="QFormLayout" name="formLayout">
+        <item row="0" column="0">
+         <widget class="QLabel" name="criterionLabel">
+          <property name="text">
+           <string>Criterion:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QComboBox" name="criterionCombo"/>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="fillBandsCheck">
+        <property name="text">
+         <string>Fill visibility bands</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="navigatorCheck">
+        <property name="text">
+         <string>Show Moon navigator</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="verticalSpacer">
+        <property name="orientation">
+         <enum>Qt::Vertical</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>20</width>
+          <height>40</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="closeButton">
+        <property name="text">
+         <string>Close</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>TitleBar</class>
+   <extends>QFrame</extends>
+   <header>Dialog.hpp</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

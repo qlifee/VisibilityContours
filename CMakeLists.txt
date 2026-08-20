@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(VisibilityContours VERSION 0.2.5 LANGUAGES CXX)
+project(VisibilityContours VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -27,6 +27,9 @@ endif()
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL)
 
 add_library(VisibilityContours MODULE
+    src/CrescentNavigatorDialog.cpp
+    src/CrescentNavigatorDialog.hpp
+    src/CrescentNavigatorDialog.ui
     src/VisibilityContours.cpp
     src/VisibilityContours.hpp
     src/VisibilityContoursDialog.cpp
@@ -67,6 +70,11 @@ if(BUILD_TESTING)
     )
     target_include_directories(VisibilityMathTests PRIVATE src)
     target_link_libraries(VisibilityMathTests PRIVATE Qt6::Core)
+    if(MSVC)
+        target_compile_options(VisibilityMathTests PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(VisibilityMathTests PRIVATE -UNDEBUG)
+    endif()
     add_test(NAME VisibilityMathTests COMMAND VisibilityMathTests)
 endif()
 
