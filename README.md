@@ -5,8 +5,6 @@ around the Sun and adds observational visibility information when the Moon is
 selected.
 
 - Current version: **0.2.0**
-- Author: **Sultan ALKHULAIFI**
-- Contact: **qlifee@gmail.com**
 
 The Odeh scheme uses contiguous categories:
 
