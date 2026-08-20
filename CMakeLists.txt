@@ -11,6 +11,8 @@ set(STELLARIUM_SOURCE_DIR "" CACHE PATH
     "Path to the Stellarium 26.2 source tree")
 set(STELLARIUM_BUILD_DIR "" CACHE PATH
     "Path to the configured Stellarium 26.2 build tree")
+set(STELLARIUM_IMPORT_LIBRARY "" CACHE FILEPATH
+    "Windows import library for the official Stellarium 26.2 executable or stelMain DLL")
 
 if(NOT EXISTS "${STELLARIUM_SOURCE_DIR}/src/core/StelPluginInterface.hpp")
     message(FATAL_ERROR
@@ -54,8 +56,15 @@ if(APPLE)
     target_link_options(VisibilityContours PRIVATE "-undefined" "dynamic_lookup")
     set_target_properties(VisibilityContours PROPERTIES SUFFIX ".dylib")
 elseif(WIN32)
-    message(FATAL_ERROR
-        "A Stellarium 26.2 import library is required for Windows builds")
+    if(NOT EXISTS "${STELLARIUM_IMPORT_LIBRARY}")
+        message(FATAL_ERROR
+            "Windows builds require STELLARIUM_IMPORT_LIBRARY from the exact "
+            "Stellarium 26.2 Qt6/MSVC package being targeted")
+    endif()
+    target_link_libraries(VisibilityContours PRIVATE
+        "${STELLARIUM_IMPORT_LIBRARY}"
+    )
+    set_target_properties(VisibilityContours PROPERTIES PREFIX "lib")
 endif()
 
 install(TARGETS VisibilityContours
