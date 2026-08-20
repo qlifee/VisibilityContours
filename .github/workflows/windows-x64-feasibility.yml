@@ -1,0 +1,171 @@
+name: Windows x64 feasibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/windows-x64-feasibility.yml"
+      - "CMakeLists.txt"
+      - "src/**"
+
+permissions:
+  contents: read
+
+env:
+  STELLARIUM_VERSION: "26.2"
+  QT_VERSION: "6.9.3"
+
+jobs:
+  inspect-and-build:
+    name: Inspect official MSVC package and attempt plugin build
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out VisibilityContours
+        uses: actions/checkout@v4
+
+      - name: Install matching Qt
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check aqtinstall
+          python -m aqt install-qt windows desktop $env:QT_VERSION win64_msvc2022_64 --outputdir C:\Qt
+
+      - name: Download Stellarium source and official installer
+        shell: pwsh
+        run: |
+          $release = "v$env:STELLARIUM_VERSION"
+          $sourceUrl = "https://github.com/Stellarium/stellarium/archive/refs/tags/$release.zip"
+          $installerUrl = "https://github.com/Stellarium/stellarium/releases/download/$release/stellarium-$env:STELLARIUM_VERSION-qt6-win64.exe"
+          Invoke-WebRequest -Uri $sourceUrl -OutFile stellarium-source.zip
+          Invoke-WebRequest -Uri $installerUrl -OutFile stellarium-installer.exe
+          Expand-Archive stellarium-source.zip -DestinationPath sdk
+          7z x stellarium-installer.exe -oinstaller -y
+
+      - name: Locate MSVC inspection tools
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $visualStudio = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          $dumpbin = Get-ChildItem "$visualStudio\VC\Tools\MSVC" -Recurse -File -Filter dumpbin.exe |
+            Where-Object { $_.FullName -match "Hostx64\\x64\\dumpbin\.exe$" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $dumpbin) {
+            throw "The x64 MSVC dumpbin.exe tool was not found"
+          }
+          "DUMPBIN=$($dumpbin.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Inspect Windows SDK surface
+        id: inspect
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $report = [System.Collections.Generic.List[string]]::new()
+          $report.Add("Stellarium $env:STELLARIUM_VERSION official Qt6 Windows x64 package")
+          $report.Add("")
+
+          $libraries = @(Get-ChildItem installer -Recurse -File -Include *.lib,*.dll | Sort-Object FullName)
+          $report.Add("Import libraries and DLLs:")
+          if ($libraries.Count -eq 0) {
+            $report.Add("  (none)")
+          } else {
+            foreach ($file in $libraries) {
+              $report.Add("  $($file.FullName)")
+            }
+          }
+
+          $stellariumExe = Get-ChildItem installer -Recurse -File -Filter stellarium.exe | Select-Object -First 1
+          if (-not $stellariumExe) {
+            throw "stellarium.exe was not found after extracting the official installer"
+          }
+
+          $exports = & $env:DUMPBIN /nologo /exports $stellariumExe.FullName 2>&1
+          $report.Add("")
+          $report.Add("stellarium.exe exports:")
+          foreach ($line in $exports) {
+            $report.Add("  $line")
+          }
+
+          $requiredPatterns = @(
+            "StelModule",
+            "StelPainter",
+            "StelCore",
+            "StelApp",
+            "SolarSystem",
+            "Planet"
+          )
+          $exportText = $exports -join "`n"
+          $missing = @($requiredPatterns | Where-Object { $exportText -notmatch [regex]::Escape($_) })
+          $report.Add("")
+          $report.Add("Required API families absent from the export table:")
+          if ($missing.Count -eq 0) {
+            $report.Add("  (none)")
+          } else {
+            foreach ($name in $missing) {
+              $report.Add("  $name")
+            }
+          }
+
+          $importLibrary = $libraries |
+            Where-Object { $_.Extension -eq ".lib" -and $_.Name -match "^(stellarium|stelMain)" } |
+            Select-Object -First 1
+          if ($importLibrary) {
+            "import_library=$($importLibrary.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            $report.Add("")
+            $report.Add("Candidate import library: $($importLibrary.FullName)")
+          } else {
+            $report.Add("")
+            $report.Add("Candidate import library: (none)")
+          }
+
+          $report | Set-Content windows-feasibility-report.txt
+          $report | ForEach-Object { Write-Host $_ }
+
+      - name: Prepare Stellarium build reference
+        if: steps.inspect.outputs.import_library != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path sdk-build | Out-Null
+          "# SDK marker for standalone plugin header build" | Set-Content sdk-build/CMakeCache.txt
+
+      - name: Configure plugin
+        if: steps.inspect.outputs.import_library != ''
+        shell: pwsh
+        run: |
+          $sourceDir = (Resolve-Path "sdk/stellarium-$env:STELLARIUM_VERSION").Path
+          $buildDir = (Resolve-Path sdk-build).Path
+          cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_PREFIX_PATH="C:\Qt\$env:QT_VERSION\msvc2022_64" `
+            -DSTELLARIUM_SOURCE_DIR="$sourceDir" `
+            -DSTELLARIUM_BUILD_DIR="$buildDir" `
+            -DSTELLARIUM_IMPORT_LIBRARY="${{ steps.inspect.outputs.import_library }}"
+
+      - name: Build plugin
+        if: steps.inspect.outputs.import_library != ''
+        shell: pwsh
+        run: cmake --build build-windows --config Release --parallel
+
+      - name: Inspect plugin when built
+        if: steps.inspect.outputs.import_library != ''
+        shell: pwsh
+        run: |
+          $plugin = Get-ChildItem build-windows -Recurse -File -Filter libVisibilityContours.dll | Select-Object -First 1
+          if (-not $plugin) {
+            throw "libVisibilityContours.dll was not produced"
+          }
+          & $env:DUMPBIN /nologo /dependents $plugin.FullName | Tee-Object -FilePath windows-plugin-dependents.txt
+          & $env:DUMPBIN /nologo /imports $plugin.FullName | Tee-Object -FilePath windows-plugin-imports.txt
+
+      - name: Publish diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-feasibility
+          path: |
+            windows-feasibility-report.txt
+            windows-plugin-dependents.txt
+            windows-plugin-imports.txt
+            build-windows/**/libVisibilityContours.dll
+          if-no-files-found: warn
