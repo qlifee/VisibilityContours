@@ -7,7 +7,7 @@
 إضافة مستقلة لبرنامج Stellarium ترسم نطاقات قابلة للاختيار لرؤية الهلال حول
 الشمس، وتضيف معلومات الرؤية الرصدية عند اختيار القمر.
 
-- الإصدار الحالي: **0.5.1**
+- الإصدار الحالي: **0.5.2**
 
 يستخدم مخطط عودة تصنيفات متصلة:
 
@@ -174,12 +174,18 @@ Stellarium، فتظهر العلامة الدوارة ذات الأجزاء ال
 على الكرة السماوية، وهو ما تحتاج إليه هذه المنحنيات. تستطيع الإضافة المترجمة
 استخدام `StelPainter` ومسقط الارتفاع والسمت مباشرة.
 
-## تثبيت الإضافة الجاهزة
+## تثبيت إضافة جاهزة
+
+إضافات Stellarium حساسة للتوافق الثنائي ABI. استخدم ملفًا مبنيًا لإصدار
+Stellarium نفسه، وللإصدار الرئيسي والفرعي نفسه من Qt، ولنظام التشغيل ومعمارية
+المعالج نفسيهما. قد يتعذر تحميل ملف مخصص لبناء آخر من Stellarium، بما في ذلك
+بناء Qt5 أو Homebrew، حتى على الحاسوب نفسه.
+
+### Linux
 
 اختُبرت إضافة Linux الجاهزة مع Stellarium 26.2 على Fedora 44 بمعمارية x86_64
-وباستخدام Qt 6.11.1. إضافات Stellarium حساسة للتوافق الثنائي ABI؛ فإذا تعذر
-على Stellarium تحميل هذه المكتبة، فاستخدم تعليمات البناء من المصدر أدناه
-مقابل تثبيت Stellarium المطابق لديك.
+وباستخدام Qt 6.11.1. فإذا تعذر على Stellarium تحميل هذه المكتبة، فاستخدم
+تعليمات البناء من المصدر أدناه مقابل تثبيت Stellarium المطابق لديك.
 
 ثبّت أحدث إصدار لحساب المستخدم الحالي:
 
@@ -222,6 +228,59 @@ rmdir "$HOME/.stellarium/modules/VisibilityContours"
 تتوفر ملفات الإصدارات وملاحظات التوافق في
 [صفحة إصدارات GitHub](https://github.com/qlifee/VisibilityContours/releases).
 
+### macOS 12 وما بعده — حزمة Stellarium 26.2 Qt6 الرسمية
+
+يستهدف مسار عمل macOS للإصدار 0.5.2 تطبيق
+`Stellarium-26.2-qt6-macOS.zip` الرسمي العام غير المعدّل من stellarium.org
+فقط. ومدخلات البناء المطابقة له هي Qt 6.9.3 وApple Clang 21، مع حد أدنى
+macOS 12.0 وشريحتي `arm64` و`x86_64`. لا يدعم هذا الملف حزم Qt5 أو Homebrew
+أو حزم Stellarium الأخرى من جهات خارجية.
+
+يتحقق مسار العمل من شريحتي المعمارية، وحد نظام التشغيل، وبيانات إضافة Qt،
+واعتماديات `@rpath`، ورموز Stellarium غير المحلولة، والرموز التي يصدّرها
+المضيف الرسمي، واستحقاقات التوقيع البرمجي. ويجب أيضًا اجتياز اختبار تشغيل
+فعلي على Apple Silicon مع التطبيق الرسمي قبل نشر الملف. أما شريحة Intel
+فيتحقق منها CI داخل الملف العام، لكنها لا تُختبر بالتشغيل ما لم يتوفر مختبِر
+يستخدم جهاز Intel Mac.
+
+ملف GitHub Actions الموقّع توقيعًا مخصصًا للاختبار فقط، وليس إصدارًا
+نهائيًا للمستخدمين. لن يُنشر تنزيل macOS مستقر قبل توقيعه بشهادة Developer ID،
+وتوثيقه لدى Apple، واجتيازه اختبار Gatekeeper لتنزيل نظيف من المتصفح. لا
+تتعامل مع ملف مسار العمل على أنه إصدار عادي للمستخدم النهائي.
+
+بعد ظهور الملف الموقّع والموثّق في صفحة الإصدارات، ثبّته لحساب المستخدم
+الحالي بالأوامر الآتية:
+
+<div dir="ltr">
+
+```bash
+download_dir="$HOME/Downloads/VisibilityContours-0.5.2-macOS"
+mkdir -p "$download_dir"
+curl -fL \
+  https://github.com/qlifee/VisibilityContours/releases/download/v0.5.2/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip \
+  -o "$download_dir/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip"
+ditto -x -k \
+  "$download_dir/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip" \
+  "$download_dir/unpacked"
+mkdir -p "$HOME/Library/Application Support/Stellarium/modules/VisibilityContours"
+install -m 755 \
+  "$download_dir/unpacked/VisibilityContours/libVisibilityContours.dylib" \
+  "$HOME/Library/Application Support/Stellarium/modules/VisibilityContours/libVisibilityContours.dylib"
+```
+
+</div>
+
+أعد تشغيل Stellarium بعد التثبيت. ولإزالة إضافة macOS:
+
+<div dir="ltr">
+
+```bash
+rm "$HOME/Library/Application Support/Stellarium/modules/VisibilityContours/libVisibilityContours.dylib"
+rmdir "$HOME/Library/Application Support/Stellarium/modules/VisibilityContours"
+```
+
+</div>
+
 ## البناء من المصدر
 
 VisibilityContours إضافة ديناميكية مستقلة. تحتاج إلى مصدر Stellarium 26.2
@@ -259,6 +318,21 @@ cmake --install build --prefix "$HOME/.stellarium"
 يحل Stellarium رموز واجهة برمجته التي تستخدمها الإضافة عند تحميل الوحدة؛ لذلك
 يجب إعادة بناء الإضافة عند استخدام إصدار غير متوافق ثنائيًا من Stellarium أو
 Qt أو المترجم.
+
+لبناء macOS عام، استخدم حزمة تطوير Qt 6.9.3 عامة وأضف:
+
+<div dir="ltr">
+
+```bash
+-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+```
+
+</div>
+
+تكون مكتبة macOS المرحلية في
+`modules/VisibilityContours/libVisibilityContours.dylib`. ولا يوفر البناء من
+المصدر وحده توقيع Developer ID أو التوثيق لدى Apple.
 
 ## ثوابت يسهل تغييرها
 

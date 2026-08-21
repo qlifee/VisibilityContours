@@ -1,0 +1,341 @@
+name: macOS universal feasibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/macos-universal.yml"
+      - "CMakeLists.txt"
+      - "README.md"
+      - "README.ar.md"
+      - "src/**"
+      - "tests/**"
+      - "translations/**"
+
+permissions:
+  contents: read
+
+env:
+  STELLARIUM_VERSION: "26.2"
+  QT_VERSION: "6.9.3"
+  XCODE_VERSION: "26.2"
+  MACOSX_DEPLOYMENT_TARGET: "12.0"
+  PLUGIN_VERSION: "0.5.2"
+
+jobs:
+  inspect-build-package:
+    name: Inspect official host and build universal plugin
+    runs-on: macos-26
+
+    steps:
+      - name: Check out VisibilityContours
+        uses: actions/checkout@v5
+
+      - name: Select matching Apple toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          test "$(uname -m)" = "arm64"
+          xcodebuild -version
+          clang++ --version
+          cmake --version
+
+      - name: Install matching universal Qt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0"
+          python3 -m aqt install-qt mac desktop "${QT_VERSION}" clang_64 \
+            --outputdir "${RUNNER_TEMP}/Qt" \
+            --modules qtcharts qtpositioning qtsvg qttools
+
+          qt_root="${RUNNER_TEMP}/Qt/${QT_VERSION}/macos"
+          test -x "${qt_root}/bin/qtpaths"
+          qt_core="${qt_root}/lib/QtCore.framework/Versions/A/QtCore"
+          test -f "${qt_core}"
+          lipo -verify_arch x86_64 arm64 "${qt_core}"
+          file "${qt_core}"
+          lipo -archs "${qt_core}"
+
+          echo "QT_ROOT=${qt_root}" >> "${GITHUB_ENV}"
+          echo "${qt_root}/bin" >> "${GITHUB_PATH}"
+
+      - name: Download unmodified Stellarium source and official application
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="v${STELLARIUM_VERSION}"
+          curl --fail --location --retry 3 \
+            "https://github.com/Stellarium/stellarium/archive/refs/tags/${release}.zip" \
+            --output stellarium-source.zip
+          curl --fail --location --retry 3 \
+            "https://github.com/Stellarium/stellarium/releases/download/${release}/Stellarium-${STELLARIUM_VERSION}-qt6-macOS.zip" \
+            --output stellarium-macos.zip
+
+          mkdir -p sdk official-host
+          ditto -x -k stellarium-source.zip sdk
+          ditto -x -k stellarium-macos.zip official-host
+
+          source_dir="$(find sdk -mindepth 1 -maxdepth 1 -type d -name 'stellarium-*' -print -quit)"
+          app_path="$(find official-host -type d -name 'Stellarium.app' -print -quit)"
+          test -n "${source_dir}"
+          test -n "${app_path}"
+          test -f "${source_dir}/src/core/StelPluginInterface.hpp"
+          test -x "${app_path}/Contents/MacOS/stellarium"
+
+          echo "STELLARIUM_SOURCE=${PWD}/${source_dir}" >> "${GITHUB_ENV}"
+          echo "STELLARIUM_APP=${PWD}/${app_path}" >> "${GITHUB_ENV}"
+
+      - name: Inspect official host architecture, signature, and library validation
+        id: host
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          host_executable="${STELLARIUM_APP}/Contents/MacOS/stellarium"
+          report="diagnostics/macos-host-report.txt"
+          entitlements="diagnostics/stellarium-entitlements.plist"
+          signature="diagnostics/stellarium-codesign.txt"
+
+          {
+            echo "Official Stellarium ${STELLARIUM_VERSION} Qt6 macOS host"
+            echo
+            echo "Host executable: ${host_executable}"
+            file "${host_executable}"
+            echo "Architectures: $(lipo -archs "${host_executable}")"
+          } | tee "${report}"
+
+          lipo -verify_arch x86_64 arm64 "${host_executable}"
+          codesign --display --verbose=4 "${STELLARIUM_APP}" >"${signature}" 2>&1
+          codesign --display --entitlements :- "${STELLARIUM_APP}" >"${entitlements}" 2>>"${signature}" || true
+          codesign --verify --deep --strict --verbose=2 "${STELLARIUM_APP}" 2>&1 | tee -a "${report}"
+
+          {
+            echo
+            echo "Code signature:"
+            sed 's/^/  /' "${signature}"
+            echo
+            echo "Entitlements:"
+            if test -s "${entitlements}"; then
+              plutil -p "${entitlements}" 2>/dev/null || cat "${entitlements}"
+            else
+              echo "  (none)"
+            fi
+          } | tee -a "${report}"
+
+          hardened_runtime=false
+          if grep -Eq 'flags=.*runtime' "${signature}"; then
+            hardened_runtime=true
+          fi
+
+          disables_library_validation=false
+          if test -s "${entitlements}" && \
+             plutil -extract com.apple.security.cs.disable-library-validation raw \
+               -o - "${entitlements}" 2>/dev/null | grep -qx 'true'; then
+            disables_library_validation=true
+          fi
+
+          load_permitted=true
+          reason="The host does not enforce Hardened Runtime library validation."
+          if test "${hardened_runtime}" = true; then
+            if test "${disables_library_validation}" = true; then
+              reason="The Hardened Runtime host disables library validation for third-party plugins."
+            else
+              load_permitted=false
+              reason="BLOCKED: the Hardened Runtime host does not disable library validation."
+            fi
+          fi
+
+          {
+            echo
+            echo "Hardened Runtime: ${hardened_runtime}"
+            echo "disable-library-validation entitlement: ${disables_library_validation}"
+            echo "Third-party plugin loading assessment: ${reason}"
+          } | tee -a "${report}"
+
+          echo "load_permitted=${load_permitted}" >> "${GITHUB_OUTPUT}"
+
+      - name: Configure matching Stellarium SDK tree
+        if: steps.host.outputs.load_permitted == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S "${STELLARIUM_SOURCE}" -B sdk-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${QT_ROOT}" \
+            -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" \
+            -DENABLE_QT6=ON \
+            -DENABLE_TESTING=OFF \
+            -DENABLE_MEDIA=OFF \
+            -DENABLE_SPEECH=OFF \
+            -DENABLE_GPS=OFF \
+            -DENABLE_SHOWMYSKY=OFF \
+            -DENABLE_XLSX=OFF \
+            -DENABLE_INDI=OFF \
+            -DENABLE_SCRIPTING=OFF \
+            -DENABLE_QTWEBENGINE=OFF \
+            -DSTELLARIUM_GUI_MODE=None \
+            -DGENERATE_PACKAGE_TARGET=OFF
+
+      - name: Configure and build universal plugin
+        if: steps.host.outputs.load_permitted == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-macos -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${QT_ROOT}" \
+            -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" \
+            -DSTELLARIUM_SOURCE_DIR="${STELLARIUM_SOURCE}" \
+            -DSTELLARIUM_BUILD_DIR="${PWD}/sdk-build"
+          cmake --build build-macos --parallel
+          ctest --test-dir build-macos --output-on-failure
+          cmake --install build-macos --prefix "${PWD}/package-root"
+
+      - name: Inspect plugin ABI, metadata, dependencies, and host exports
+        id: plugin
+        if: steps.host.outputs.load_permitted == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          plugin="${PWD}/package-root/modules/VisibilityContours/libVisibilityContours.dylib"
+          test -f "${plugin}"
+          lipo -verify_arch x86_64 arm64 "${plugin}"
+
+          mkdir -p diagnostics/symbols
+          report="diagnostics/macos-plugin-report.txt"
+          dependencies="diagnostics/plugin-otool.txt"
+          symbols_ok=true
+
+          {
+            echo "VisibilityContours ${PLUGIN_VERSION} macOS universal plugin"
+            echo
+            file "${plugin}"
+            echo "Architectures: $(lipo -archs "${plugin}")"
+            echo "Minimum deployment targets:"
+            otool -l "${plugin}" | awk '
+              /LC_BUILD_VERSION/ { in_build=1; next }
+              in_build && /minos/ { print "  " $0; in_build=0 }
+              /LC_VERSION_MIN_MACOSX/ { in_min=1; next }
+              in_min && /version/ { print "  " $0; in_min=0 }
+            '
+          } | tee "${report}"
+
+          otool -L "${plugin}" | tee "${dependencies}"
+          cat "${dependencies}" >> "${report}"
+
+          if grep -Eq "${RUNNER_TEMP}|/opt/homebrew|/usr/local" "${dependencies}"; then
+            echo "BLOCKED: plugin dependencies contain a runner or package-manager path." | tee -a "${report}"
+            symbols_ok=false
+          fi
+          if awk 'NR > 1 && /Qt[A-Za-z0-9]+\.framework/ && $1 !~ /^@rpath\//' "${dependencies}" | grep -q .; then
+            echo "BLOCKED: at least one Qt framework dependency is not resolved through @rpath." | tee -a "${report}"
+            symbols_ok=false
+          fi
+
+          metadata_ok=true
+          for arch in arm64 x86_64; do
+            if ! nm -arch "${arch}" -g "${plugin}" | grep -Eq 'qt_plugin_(instance|query_metadata)'; then
+              metadata_ok=false
+            fi
+          done
+          if test "${metadata_ok}" = true; then
+            echo "Qt plugin metadata exports: present in both slices" | tee -a "${report}"
+          else
+            echo "BLOCKED: Qt plugin metadata exports are missing from at least one slice." | tee -a "${report}"
+            symbols_ok=false
+          fi
+
+          find "${STELLARIUM_APP}/Contents/MacOS" "${STELLARIUM_APP}/Contents/Frameworks" \
+            -type f -print0 2>/dev/null > diagnostics/symbols/host-files.bin
+
+          for arch in arm64 x86_64; do
+            host_exports="diagnostics/symbols/host-exports-${arch}.txt"
+            unresolved="diagnostics/symbols/plugin-unresolved-${arch}.txt"
+            required="diagnostics/symbols/plugin-stellarium-required-${arch}.txt"
+            missing="diagnostics/symbols/plugin-stellarium-missing-${arch}.txt"
+
+            : > "${host_exports}"
+            while IFS= read -r -d '' candidate; do
+              if file "${candidate}" 2>/dev/null | grep -q 'Mach-O'; then
+                nm -arch "${arch}" -gjU "${candidate}" >> "${host_exports}" 2>/dev/null || true
+              fi
+            done < diagnostics/symbols/host-files.bin
+            LC_ALL=C sort -u -o "${host_exports}" "${host_exports}"
+
+            nm -arch "${arch}" -u "${plugin}" | awk '$1 == "U" { print $2 }' | \
+              LC_ALL=C sort -u > "${unresolved}"
+            grep -E 'Stel|SolarSystem|Planet|TitleBar' "${unresolved}" > "${required}" || true
+            comm -23 "${required}" "${host_exports}" > "${missing}"
+
+            {
+              echo
+              echo "${arch} unresolved Stellarium symbols required by plugin: $(wc -l < "${required}" | tr -d ' ')"
+              sed 's/^/  /' "${required}"
+              echo "${arch} required symbols absent from official host exports: $(wc -l < "${missing}" | tr -d ' ')"
+              sed 's/^/  /' "${missing}"
+            } | tee -a "${report}"
+
+            if ! test -s "${required}"; then
+              echo "BLOCKED: no Stellarium symbols were classified for ${arch}; inspection is inconclusive." | tee -a "${report}"
+              symbols_ok=false
+            fi
+            if test -s "${missing}"; then
+              symbols_ok=false
+            fi
+          done
+
+          echo "compatible=${symbols_ok}" >> "${GITHUB_OUTPUT}"
+
+      - name: Ad-hoc sign and package test artifact
+        if: steps.host.outputs.load_permitted == 'true' && steps.plugin.outputs.compatible == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_name="VisibilityContours-${PLUGIN_VERSION}-Stellarium-${STELLARIUM_VERSION}-macOS-universal"
+          package_dir="${PWD}/artifact/VisibilityContours"
+          archive="${PWD}/artifact/${package_name}.zip"
+          source_plugin="${PWD}/package-root/modules/VisibilityContours/libVisibilityContours.dylib"
+
+          mkdir -p "${package_dir}"
+          cp "${source_plugin}" "${package_dir}/libVisibilityContours.dylib"
+          codesign --force --sign - --timestamp=none "${package_dir}/libVisibilityContours.dylib"
+          codesign --verify --strict --verbose=2 "${package_dir}/libVisibilityContours.dylib" 2>&1 | \
+            tee diagnostics/plugin-codesign.txt
+          codesign --display --verbose=4 "${package_dir}/libVisibilityContours.dylib" 2>&1 | \
+            tee -a diagnostics/plugin-codesign.txt
+
+          ditto -c -k --sequesterRsrc --keepParent "${package_dir}" "${archive}"
+          (
+            cd artifact
+            shasum -a 256 "${package_name}.zip" > "${package_name}.zip.sha256"
+          )
+
+      - name: Upload macOS test artifact and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: VisibilityContours-0.5.2-macOS-universal-test
+          path: |
+            artifact/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip
+            artifact/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip.sha256
+            diagnostics/**
+          if-no-files-found: warn
+
+      - name: Enforce compatibility gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test "${{ steps.host.outputs.load_permitted }}" != "true"; then
+            echo "The official host signature does not currently permit the planned third-party plugin load."
+            exit 1
+          fi
+          if test "${{ steps.plugin.outputs.compatible }}" != "true"; then
+            echo "The plugin ABI/metadata/dependency/export inspection did not pass."
+            exit 1
+          fi
+          test -f "artifact/VisibilityContours-${PLUGIN_VERSION}-Stellarium-${STELLARIUM_VERSION}-macOS-universal.zip"
