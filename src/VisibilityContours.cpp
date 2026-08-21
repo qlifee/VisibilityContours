@@ -21,6 +21,7 @@
 #include <QDebug>
 #include <QCoreApplication>
 #include <QFont>
+#include <QGuiApplication>
 #include <QSettings>
 #include <QString>
 #include <QTranslator>
@@ -1036,7 +1037,9 @@ void VisibilityContours::draw(StelCore* core)
     painter.setBlending(true);
     painter.setLineSmooth(true);
     painter.setLineWidth(2.2f);
-    painter.setFont(QFont("Sans Serif", 11));
+    QFont overlayFont = QGuiApplication::font();
+    overlayFont.setPixelSize(StelApp::getInstance().getScreenFontSize());
+    painter.setFont(overlayFont);
 
     const std::vector<VisibilityBand> bands =
         bandsForCriterion(selectedCriterion, moon, earth);
