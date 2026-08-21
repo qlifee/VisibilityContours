@@ -52,6 +52,7 @@ constexpr double ARCV_MAX_DEG =  40.0;
 constexpr double DAZ_MIN_DEG = -55.0;
 constexpr double DAZ_MAX_DEG =  55.0;
 constexpr double DAZ_STEP_DEG = 0.25;
+constexpr double GREEN_BAND_UPPER_V = 27.0;
 constexpr double SYNODIC_MONTH_DAYS = 29.530588853;
 constexpr int MAX_NAVIGATOR_LUNATIONS = 24;
 constexpr double NAVIGATION_EPSILON_DAYS = 1.0 / 86400.0;
@@ -451,11 +452,11 @@ std::vector<VisibilityBand> bandsForCriterion(const QString& criterion,
         return {{boundaries[0], boundaries[1], BLUE},
                 {boundaries[1], boundaries[2], MAGENTA},
                 {boundaries[2], boundaries[3], YELLOW},
-                {boundaries[3], std::nullopt, GREEN}};
+                {boundaries[3], GREEN_BAND_UPPER_V, GREEN}};
     }
     return {{-0.96, 2.00, BLUE},
             {2.00, 5.65, MAGENTA},
-            {5.65, std::nullopt, GREEN}};
+            {5.65, GREEN_BAND_UPPER_V, GREEN}};
 }
 
 } // namespace
@@ -525,6 +526,9 @@ StelPluginInfo VisibilityContoursStelPluginInterface::getPluginInfo() const
 VisibilityContours::VisibilityContours()
     : cachedForJDE(std::numeric_limits<double>::quiet_NaN())
     , cachedConjunctionJDE(std::numeric_limits<double>::quiet_NaN())
+    , cachedInformationForJDE(std::numeric_limits<double>::quiet_NaN())
+    , cachedInformationConjunctionJDE(
+          std::numeric_limits<double>::quiet_NaN())
     , cachedBestLocalDay(std::numeric_limits<double>::quiet_NaN())
     , cachedBestLatitude(std::numeric_limits<double>::quiet_NaN())
     , cachedBestLongitude(std::numeric_limits<double>::quiet_NaN())
@@ -694,7 +698,24 @@ void VisibilityContours::addMoonInformation(StelCore* core)
 
     const double moonAltitudeDeg =
         altitudeRad(moon->getAltAzPosGeometric(core)) * RAD2DEG;
-    if (!VisibilityMath::moonIsUp(moonAltitudeDeg))
+    const double currentJde = core->getJDE();
+    if (VisibilityMath::moonIsUp(moonAltitudeDeg)
+        && (!std::isfinite(cachedInformationForJDE)
+            || std::abs(currentJde - cachedInformationForJDE) > 0.20))
+    {
+        double conjunctionJde = 0.0;
+        if (findConjunctionFromAnyPhase(moon, earth, currentJde,
+                                        conjunctionJde))
+            cachedInformationConjunctionJDE = conjunctionJde;
+        else
+            cachedInformationConjunctionJDE =
+                std::numeric_limits<double>::quiet_NaN();
+        cachedInformationForJDE = currentJde;
+    }
+
+    if (!VisibilityMath::moonInformationAvailable(
+            moonAltitudeDeg, currentJde,
+            cachedInformationConjunctionJDE))
     {
         moon->addToExtraInfoString(StelObject::OtherCoord,
                                    tr("V now: -<br/>"));

@@ -6,6 +6,9 @@
 
 class VisibilityContours;
 class Ui_CrescentNavigatorDialog;
+class QEvent;
+class QLabel;
+class QPushButton;
 
 class CrescentNavigatorDialog : public StelDialog
 {
@@ -37,15 +40,19 @@ public slots:
 
 protected:
     void createDialogContent() override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void applyStatus();
+    void configureButtonTooltips();
+    void showButtonTooltip(QPushButton* button, const QPoint& buttonPosition);
     void updateEventFilterDirection();
     void updateEventFilterControls(const QString& value);
     QString hijriMonthName(int month) const;
 
     VisibilityContours* module;
     Ui_CrescentNavigatorDialog* ui;
+    QLabel* hoverTooltip;
     StatusMessage pendingMessage;
     bool pendingIsEvent;
     VisibilityMath::CrescentEventKind pendingEventKind;

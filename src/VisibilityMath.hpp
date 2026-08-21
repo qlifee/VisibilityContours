@@ -89,6 +89,8 @@ std::optional<double> nearestTime(double currentJd,
 int conjunctionDayIndex(double eventJde, double conjunctionJde);
 bool eventInConjunctionWindow(double eventJde, double conjunctionJde);
 bool moonIsUp(double moonAltitudeDeg);
+bool moonInformationAvailable(double moonAltitudeDeg, double currentJde,
+                              double conjunctionJde);
 bool validCrescentEvent(double eventJd, double eventJde, double conjunctionJde,
                         double moonAltitudeDeg);
 std::optional<NavigationTime> chooseNavigationTime(
