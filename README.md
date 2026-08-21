@@ -1,3 +1,5 @@
+[English](README.md) | [العربية](README.ar.md)
+
 # VisibilityContours for Stellarium
 
 Standalone Stellarium plugin that draws selectable crescent-visibility bands
@@ -135,15 +137,11 @@ available only for observers on Earth. Closing the panel disables its saved
 configuration checkbox. These are calculated Moon events; visiting one does
 not assert that the Moon has already reached a visible-crescent threshold.
 
-After navigation, the panel also shows a compact Hijri month/year heading.
-Morning events use the event's observer-local Gregorian civil date minus ten
-days and display `End of Rabi' al-Awwal 1448 AH`; evening events use the local
-date plus ten days and display `Beginning of Rabi' al-Akhir 1448 AH`. In Arabic
-the corresponding formats are `آخر ربيع الأول 1448 هـ` and
-`غرة ربيع الآخر 1448 هـ`. The conversion reproduces the arithmetic
-`convertdate.islamic` calendar with epoch `1948439.5` and the same month names
-and ±10-day month-selection convention as `hcal-maps`. It is intentionally not
-an observational or local crescent calendar.
+After navigation, the panel also shows a compact Hijri month/year heading for
+the selected event. Morning events use the format
+`End of Rabi' al-Awwal 1448 AH`, while evening events use
+`Beginning of Rabi' al-Akhir 1448 AH`. In Arabic, the corresponding formats are
+`آخر ربيع الأول 1448 هـ` and `غرة ربيع الآخر 1448 هـ`.
 
 ## Calculation references
 
