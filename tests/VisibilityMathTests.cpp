@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <string>
 
 namespace
 {
@@ -22,6 +23,36 @@ int main()
     assert(!useArabicForProgramLanguage("en"));
     assert(!useArabicForProgramLanguage("fa"));
     assert(!useArabicForProgramLanguage("a"));
+
+    assert(eventFilterFromString("both") == EventFilter::Both);
+    assert(eventFilterFromString("Morning") == EventFilter::Morning);
+    assert(eventFilterFromString("EVENING") == EventFilter::Evening);
+    assert(eventFilterFromString("invalid") == EventFilter::Both);
+    assert(std::string(eventFilterKey(EventFilter::Both)) == "both");
+    assert(std::string(eventFilterName(EventFilter::Morning)) == "Morning");
+    assert(eventMatchesFilter(CrescentEventKind::Morning, EventFilter::Both));
+    assert(eventMatchesFilter(CrescentEventKind::Morning, EventFilter::Morning));
+    assert(!eventMatchesFilter(CrescentEventKind::Evening, EventFilter::Morning));
+    assert(eventMatchesFilter(CrescentEventKind::Evening, EventFilter::Evening));
+
+    const auto septemberMorning = hijriMonthYearForEvent(
+        2026, 9, 8, CrescentEventKind::Morning);
+    const auto septemberEvening = hijriMonthYearForEvent(
+        2026, 9, 8, CrescentEventKind::Evening);
+    assert(septemberMorning && septemberMorning->year == 1448
+           && septemberMorning->month == 3);
+    assert(septemberEvening && septemberEvening->year == 1448
+           && septemberEvening->month == 4);
+    const auto rolloverMorning = hijriMonthYearForEvent(
+        2026, 6, 7, CrescentEventKind::Morning);
+    const auto rolloverEvening = hijriMonthYearForEvent(
+        2026, 6, 7, CrescentEventKind::Evening);
+    assert(rolloverMorning && rolloverMorning->year == 1447
+           && rolloverMorning->month == 12);
+    assert(rolloverEvening && rolloverEvening->year == 1448
+           && rolloverEvening->month == 1);
+    assert(!hijriMonthYearForEvent(2026, 2, 30,
+                                   CrescentEventKind::Morning));
 
     assert(close(CONVENTIONAL_SUN_CENTER_ALTITUDE_DEG, -0.8333));
     assert(close(theoreticalWidth(0.0, 0.0), 0.0));
@@ -136,6 +167,44 @@ int main()
     assert(!adjacentCrescentEvent(events, 102.0, 1));
     assert(!adjacentCrescentEvent(events, 100.0, -1));
 
+    const auto firstMorning = adjacentCrescentEvent(
+        events, 100.0, 1, EventFilter::Morning);
+    const auto afterExactMorning = adjacentCrescentEvent(
+        events, 100.25, 1, EventFilter::Morning);
+    const auto beforeExactMorning = adjacentCrescentEvent(
+        events, 101.25, -1, EventFilter::Morning);
+    const auto firstEvening = adjacentCrescentEvent(
+        events, 100.0, 1, EventFilter::Evening);
+    const auto afterExactEvening = adjacentCrescentEvent(
+        events, 100.75, 1, EventFilter::Evening);
+    const auto beforeExactEvening = adjacentCrescentEvent(
+        events, 101.75, -1, EventFilter::Evening);
+    assert(firstMorning && close(firstMorning->jd, 100.25));
+    assert(afterExactMorning && close(afterExactMorning->jd, 101.25));
+    assert(beforeExactMorning && close(beforeExactMorning->jd, 100.25));
+    assert(firstEvening && close(firstEvening->jd, 100.75));
+    assert(afterExactEvening && close(afterExactEvening->jd, 101.75));
+    assert(beforeExactEvening && close(beforeExactEvening->jd, 100.75));
+    assert(!adjacentCrescentEvent(events, 101.25, 1,
+                                  EventFilter::Morning));
+    assert(!adjacentCrescentEvent(events, 100.75, -1,
+                                  EventFilter::Evening));
+    const auto morningInsideForwardEpsilon = adjacentCrescentEvent(
+        events, 100.25 - 0.5 / 86400.0, 1, EventFilter::Morning);
+    const auto morningOutsideForwardEpsilon = adjacentCrescentEvent(
+        events, 100.25 - 2.0 / 86400.0, 1, EventFilter::Morning);
+    const auto eveningInsideBackwardEpsilon = adjacentCrescentEvent(
+        events, 100.75 + 0.5 / 86400.0, -1, EventFilter::Evening);
+    const auto eveningOutsideBackwardEpsilon = adjacentCrescentEvent(
+        events, 100.75 + 2.0 / 86400.0, -1, EventFilter::Evening);
+    assert(morningInsideForwardEpsilon
+           && close(morningInsideForwardEpsilon->jd, 101.25));
+    assert(morningOutsideForwardEpsilon
+           && close(morningOutsideForwardEpsilon->jd, 100.25));
+    assert(!eveningInsideBackwardEpsilon);
+    assert(eveningOutsideBackwardEpsilon
+           && close(eveningOutsideBackwardEpsilon->jd, 100.75));
+
     std::vector<CrescentEvent> lunations = {
         {103.0, 100.0, 3, CrescentEventKind::Evening},
         {126.5, 129.5, -3, CrescentEventKind::Morning}
@@ -145,6 +214,12 @@ int main()
     const auto previousLunation = adjacentCrescentEvent(lunations, 126.5, -1);
     assert(nextLunation && close(nextLunation->jd, 126.5));
     assert(previousLunation && close(previousLunation->jd, 103.0));
+    const auto nextMorningLunation = adjacentCrescentEvent(
+        lunations, 103.0, 1, EventFilter::Morning);
+    const auto previousEveningLunation = adjacentCrescentEvent(
+        lunations, 126.5, -1, EventFilter::Evening);
+    assert(nextMorningLunation && close(nextMorningLunation->jd, 126.5));
+    assert(previousEveningLunation && close(previousEveningLunation->jd, 103.0));
 
     std::cout << "VisibilityMathTests passed\n";
     return 0;

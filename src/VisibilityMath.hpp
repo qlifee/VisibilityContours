@@ -26,6 +26,13 @@ enum class NavigationMode
     MoonUpOrDown
 };
 
+enum class EventFilter
+{
+    Both,
+    Morning,
+    Evening
+};
+
 enum class EventTimeBasis
 {
     BestTime,
@@ -48,6 +55,20 @@ struct CrescentEvent
     NavigationMode mode = NavigationMode::MoonUpOnly;
     EventTimeBasis basis = EventTimeBasis::BestTime;
 };
+
+struct HijriMonthYear
+{
+    int year;
+    int month;
+};
+
+EventFilter eventFilterFromString(const std::string& value);
+const char* eventFilterKey(EventFilter filter);
+const char* eventFilterName(EventFilter filter);
+bool eventMatchesFilter(CrescentEventKind kind, EventFilter filter);
+std::optional<HijriMonthYear> hijriMonthYearForEvent(
+    int gregorianYear, int gregorianMonth, int gregorianDay,
+    CrescentEventKind kind);
 
 double odehPolynomial(double widthArcmin);
 double odehValue(double arcvDeg, double widthArcmin);
@@ -76,7 +97,8 @@ std::optional<NavigationTime> chooseNavigationTime(
 void sortCrescentEvents(std::vector<CrescentEvent>& events);
 std::optional<CrescentEvent> adjacentCrescentEvent(
     const std::vector<CrescentEvent>& events, double currentJd,
-    int direction, double epsilonDays = 1.0 / 86400.0);
+    int direction, EventFilter filter = EventFilter::Both,
+    double epsilonDays = 1.0 / 86400.0);
 }
 
 #endif

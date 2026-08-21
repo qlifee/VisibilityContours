@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>400</width>
-    <height>238</height>
+    <height>310</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -49,6 +49,19 @@
        <number>8</number>
       </property>
       <item>
+       <widget class="QLabel" name="hijriLabel">
+        <property name="text">
+         <string/>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QLabel" name="statusLabel">
         <property name="text">
          <string>Ready</string>
@@ -70,6 +83,41 @@
          <set>Qt::AlignCenter</set>
         </property>
        </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="eventFilterLayout">
+        <item>
+         <widget class="QLabel" name="navigateLabel">
+          <property name="text">
+           <string>Navigate:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QRadioButton" name="bothRadio">
+          <property name="text">
+           <string>Both</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QRadioButton" name="morningRadio">
+          <property name="text">
+           <string>Morning</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QRadioButton" name="eveningRadio">
+          <property name="text">
+           <string>Evening</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
       <item>
        <widget class="QLabel" name="moonUpOnlyLabel">

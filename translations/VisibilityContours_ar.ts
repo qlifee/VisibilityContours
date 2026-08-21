@@ -70,6 +70,14 @@
    <translation>جاهز</translation>
   </message>
   <message>
+   <source>Navigate:</source>
+   <translation>التنقل:</translation>
+  </message>
+  <message>
+   <source>Both</source>
+   <translation>كلاهما</translation>
+  </message>
+  <message>
    <source>Only Moon up</source>
    <translation>القمر فوق الأفق فقط</translation>
   </message>
@@ -128,6 +136,62 @@
   <message>
    <source>No valid Moon event found</source>
    <translation>لم يُعثر على حدث صالح للقمر</translation>
+  </message>
+  <message>
+   <source>Muharram</source>
+   <translation>المحرم</translation>
+  </message>
+  <message>
+   <source>Safar</source>
+   <translation>صفر</translation>
+  </message>
+  <message>
+   <source>Rabi' al-Awwal</source>
+   <translation>ربيع الأول</translation>
+  </message>
+  <message>
+   <source>Rabi' al-Akhir</source>
+   <translation>ربيع الآخر</translation>
+  </message>
+  <message>
+   <source>Jumada al-Ula</source>
+   <translation>جمادى الأولى</translation>
+  </message>
+  <message>
+   <source>Jumada al-Akhirah</source>
+   <translation>جمادى الآخرة</translation>
+  </message>
+  <message>
+   <source>Rajab</source>
+   <translation>رجب</translation>
+  </message>
+  <message>
+   <source>Sha'ban</source>
+   <translation>شعبان</translation>
+  </message>
+  <message>
+   <source>Ramadan</source>
+   <translation>رمضان</translation>
+  </message>
+  <message>
+   <source>Shawwal</source>
+   <translation>شوال</translation>
+  </message>
+  <message>
+   <source>Dhu al-Qi'dah</source>
+   <translation>ذي القعدة</translation>
+  </message>
+  <message>
+   <source>Dhu al-Hijjah</source>
+   <translation>ذي الحجة</translation>
+  </message>
+  <message>
+   <source>End of %1 %2 AH</source>
+   <translation>آخر %1 %2 هـ</translation>
+  </message>
+  <message>
+   <source>Beginning of %1 %2 AH</source>
+   <translation>غرة %1 %2 هـ</translation>
   </message>
  </context>
  <context>

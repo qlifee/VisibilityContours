@@ -19,6 +19,8 @@ class VisibilityContours : public StelModule
     Q_PROPERTY(bool fillBands READ fillBands WRITE setFillBands NOTIFY fillBandsChanged)
     Q_PROPERTY(bool navigatorVisible READ navigatorVisible WRITE setNavigatorVisible
                NOTIFY navigatorVisibleChanged)
+    Q_PROPERTY(QString eventFilter READ eventFilter WRITE setEventFilter
+               NOTIFY eventFilterChanged)
 
 public:
     VisibilityContours();
@@ -32,11 +34,13 @@ public:
     QString criterion() const;
     bool fillBands() const;
     bool navigatorVisible() const;
+    QString eventFilter() const;
 
 public slots:
     void setCriterion(const QString& value);
     void setFillBands(bool enabled);
     void setNavigatorVisible(bool visible);
+    void setEventFilter(const QString& value);
     void navigateForward();
     void navigateBackward();
     void navigateAllForward();
@@ -46,6 +50,7 @@ signals:
     void criterionChanged(const QString& value);
     void fillBandsChanged(bool enabled);
     void navigatorVisibleChanged(bool visible);
+    void eventFilterChanged(const QString& value);
 
 private:
     void readSettings();
@@ -73,6 +78,7 @@ private:
     bool bandsFilled;
     bool navigatorShown;
     bool navigatorEarthAvailable;
+    VisibilityMath::EventFilter navigatorEventFilter;
     QSettings* settings;
     VisibilityContoursDialog* configDialog;
     CrescentNavigatorDialog* navigatorDialog;
