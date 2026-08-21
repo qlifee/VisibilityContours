@@ -51,7 +51,7 @@ jobs:
           "${RUNNER_TEMP}/aqt-venv/bin/python" -m aqt install-qt \
             mac desktop "${QT_VERSION}" clang_64 \
             --outputdir "${RUNNER_TEMP}/Qt" \
-            --modules qtcharts qtpositioning
+            --modules qtcharts qtpositioning qtserialport
 
           qt_root="${RUNNER_TEMP}/Qt/${QT_VERSION}/macos"
           test -x "${qt_root}/bin/qtpaths"
