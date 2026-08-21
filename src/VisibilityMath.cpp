@@ -278,6 +278,13 @@ bool moonIsUp(double moonAltitudeDeg)
     return std::isfinite(moonAltitudeDeg) && moonAltitudeDeg > 0.0;
 }
 
+bool moonInformationAvailable(double moonAltitudeDeg, double currentJde,
+                              double conjunctionJde)
+{
+    return moonIsUp(moonAltitudeDeg)
+           && eventInConjunctionWindow(currentJde, conjunctionJde);
+}
+
 bool validCrescentEvent(double eventJd, double eventJde, double conjunctionJde,
                         double moonAltitudeDeg)
 {

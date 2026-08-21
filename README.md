@@ -6,7 +6,7 @@ Standalone Stellarium plugin that draws selectable crescent-visibility bands
 around the Sun and adds observational visibility information when the Moon is
 selected.
 
-- Current version: **0.5.0**
+- Current version: **0.5.1**
 
 The Odeh scheme uses contiguous categories:
 
@@ -18,6 +18,11 @@ The Yallop scheme converts the original q boundaries `-0.232`, `-0.160`,
 `-0.014`, and `0.216` to equivalent Odeh V values using the Moon's current
 horizontal parallax. This makes its blue, magenta, yellow, and green categories
 date-dependent and contiguous.
+
+For both criteria, the rendered green fill extends to `V = 27.00`. This upper
+drawing limit gives the filled region a contour-shaped outer edge instead of
+ending against the rectangular ARCV/DAZ sampling domain. It does not introduce
+an additional visibility category or labeled criterion boundary.
 
 Yallop is selected on every plugin startup, regardless of a previously saved
 criterion. Users can switch to Odeh for the current session. All contour labels
@@ -38,7 +43,7 @@ When Stellarium's program language is Arabic, plugin-owned dialogs, tooltips,
 status text, Moon information, conjunction labels, name, description, and
 displayed author use Arabic. Every other program language uses English. Runtime
 plugin UI follows language changes immediately; Stellarium's cached Plugins-page
-metadata may require a restart. Names and titles within the reference section,
+metadata requires a restart after changing the program language. Names and titles within the reference section,
 links, Western numerals, and scientific notation remain unchanged.
 
 ## Geometry
@@ -90,7 +95,8 @@ calculates both valid candidates and displays the one nearest the current
 Stellarium clock, in the observer's local civil time.
 The information panel shows time only, formatted like `17h55m15s`.
 
-If the selected Moon is at or below the airless geometric horizon, all three
+If the selected Moon is at or below the airless geometric horizon, or the
+current time is outside conjunction-day bins `-3` through `+3`, all three
 plugin rows display `-` instead of observational values or a best time.
 
 Sunrise and sunset use a geometric Sun-center altitude of `-0.8333°`, the

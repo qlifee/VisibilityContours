@@ -61,6 +61,8 @@ private:
 
     double cachedForJDE;
     double cachedConjunctionJDE;
+    double cachedInformationForJDE;
+    double cachedInformationConjunctionJDE;
     double cachedBestLocalDay;
     double cachedBestLatitude;
     double cachedBestLongitude;

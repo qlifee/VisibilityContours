@@ -9,15 +9,22 @@
 #include "ui_CrescentNavigatorDialog.h"
 
 #include <QBoxLayout>
+#include <QColor>
+#include <QEnterEvent>
+#include <QEvent>
 #include <QLabel>
+#include <QMouseEvent>
+#include <QPalette>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSettings>
+#include <QToolTip>
 
 CrescentNavigatorDialog::CrescentNavigatorDialog(VisibilityContours* contours)
     : StelDialog("VisibilityContoursNavigator")
     , module(contours)
     , ui(new Ui_CrescentNavigatorDialog)
+    , hoverTooltip(nullptr)
     , pendingMessage(StatusMessage::Ready)
     , pendingIsEvent(false)
     , pendingEventKind(VisibilityMath::CrescentEventKind::Morning)
@@ -42,6 +49,30 @@ CrescentNavigatorDialog::~CrescentNavigatorDialog()
 void CrescentNavigatorDialog::createDialogContent()
 {
     ui->setupUi(dialog);
+    hoverTooltip = new QLabel(dialog);
+    hoverTooltip->setObjectName(QStringLiteral("visibilityContoursHoverTooltip"));
+    hoverTooltip->setAttribute(Qt::WA_TransparentForMouseEvents);
+    const QPalette tooltipPalette = QToolTip::palette();
+    QColor background = tooltipPalette.color(QPalette::ToolTipBase);
+    QColor foreground = tooltipPalette.color(QPalette::ToolTipText);
+    QColor border = tooltipPalette.color(QPalette::Dark);
+    background.setAlpha(255);
+    foreground.setAlpha(255);
+    border.setAlpha(255);
+    const auto cssColor = [](const QColor& color)
+    {
+        return QStringLiteral("rgba(%1, %2, %3, %4)")
+            .arg(color.red()).arg(color.green()).arg(color.blue()).arg(color.alpha());
+    };
+    hoverTooltip->setStyleSheet(
+        QStringLiteral(
+            "QLabel#visibilityContoursHoverTooltip {"
+            " background-color: %1; color: %2; border: 1px solid %3;"
+            " border-radius: 3px; padding: 4px 7px; }"
+        ).arg(cssColor(background), cssColor(foreground), cssColor(border)));
+    hoverTooltip->setFont(QToolTip::font());
+    hoverTooltip->hide();
+
     updateEventFilterDirection();
     applyStatus();
     ui->backButton->setEnabled(pendingEnabled);
@@ -49,6 +80,15 @@ void CrescentNavigatorDialog::createDialogContent()
     ui->allBackButton->setEnabled(pendingEnabled);
     ui->allForwardButton->setEnabled(pendingEnabled);
     updateEventFilterControls(module->eventFilter());
+
+    // StelDialog widgets are embedded in a QGraphicsProxyWidget. Qt's native
+    // tooltip window can therefore interpret scene coordinates as screen
+    // coordinates. Use a child overlay driven by local mouse coordinates.
+    configureButtonTooltips();
+    ui->backButton->installEventFilter(this);
+    ui->forwardButton->installEventFilter(this);
+    ui->allBackButton->installEventFilter(this);
+    ui->allForwardButton->installEventFilter(this);
 
     connect(&StelApp::getInstance(), &StelApp::languageChanged,
             this, &CrescentNavigatorDialog::retranslate);
@@ -72,6 +112,63 @@ void CrescentNavigatorDialog::createDialogContent()
             [this]() { module->setEventFilter(QStringLiteral("Evening")); });
     connect(module, &VisibilityContours::eventFilterChanged, this,
             &CrescentNavigatorDialog::updateEventFilterControls);
+}
+
+bool CrescentNavigatorDialog::eventFilter(QObject* watched, QEvent* event)
+{
+    auto* button = qobject_cast<QPushButton*>(watched);
+    if (button && event->type() == QEvent::Enter)
+    {
+        const auto* enterEvent = static_cast<QEnterEvent*>(event);
+        showButtonTooltip(button, enterEvent->position().toPoint());
+    }
+    else if (button && event->type() == QEvent::MouseMove)
+    {
+        const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        showButtonTooltip(button, mouseEvent->position().toPoint());
+    }
+    else if (button && event->type() == QEvent::Leave && hoverTooltip)
+        hoverTooltip->hide();
+    return StelDialog::eventFilter(watched, event);
+}
+
+void CrescentNavigatorDialog::configureButtonTooltips()
+{
+    const auto configure = [](QPushButton* button, const QString& text)
+    {
+        button->setProperty("visibilityContoursTooltip", text);
+        button->setToolTip(QString());
+        button->setMouseTracking(true);
+    };
+    configure(ui->backButton, tr("Previous Moon best time"));
+    configure(ui->forwardButton, tr("Next Moon best time"));
+    configure(ui->allBackButton, tr("Previous Moon event"));
+    configure(ui->allForwardButton, tr("Next Moon event"));
+}
+
+void CrescentNavigatorDialog::showButtonTooltip(
+    QPushButton* button, const QPoint& buttonPosition)
+{
+    if (!hoverTooltip || !dialog)
+        return;
+    const QString text = button->property("visibilityContoursTooltip").toString();
+    if (text.isEmpty())
+        return;
+
+    hoverTooltip->setText(text);
+    hoverTooltip->adjustSize();
+    const QPoint cursorInDialog = button->mapTo(dialog, buttonPosition);
+    const int margin = 4;
+    const int maximumX = qMax(margin,
+                              dialog->width() - hoverTooltip->width() - margin);
+    const int maximumY = qMax(margin,
+                              dialog->height() - hoverTooltip->height() - margin);
+    const QPoint position(
+        qBound(margin, cursorInDialog.x() + 12, maximumX),
+        qBound(margin, cursorInDialog.y() + 18, maximumY));
+    hoverTooltip->move(position);
+    hoverTooltip->raise();
+    hoverTooltip->show();
 }
 
 void CrescentNavigatorDialog::setVisible(bool visible)
@@ -157,6 +254,7 @@ void CrescentNavigatorDialog::retranslate()
     if (dialog)
     {
         ui->retranslateUi(dialog);
+        configureButtonTooltips();
         updateEventFilterDirection();
         applyStatus();
     }
