@@ -18,7 +18,7 @@ permissions:
 env:
   STELLARIUM_VERSION: "26.2"
   QT_VERSION: "6.9.3"
-  XCODE_VERSION: "26.2"
+  XCODE_VERSION: "26.5"
   MACOSX_DEPLOYMENT_TARGET: "12.0"
   PLUGIN_VERSION: "0.5.2"
 
@@ -38,7 +38,9 @@ jobs:
           sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
           test "$(uname -m)" = "arm64"
           xcodebuild -version
-          clang++ --version
+          clang_version="$(clang++ --version)"
+          echo "${clang_version}"
+          grep -q 'Apple clang version 21\.0\.0' <<< "${clang_version}"
           cmake --version
 
       - name: Install matching universal Qt

@@ -209,9 +209,9 @@ Release downloads and compatibility notes are available on the
 
 The macOS v0.5.2 workflow targets only the unmodified official universal
 `Stellarium-26.2-qt6-macOS.zip` application from stellarium.org. Its matching
-build inputs are Qt 6.9.3, Apple Clang 21, a macOS 12.0 deployment target, and
-both `arm64` and `x86_64` slices. Qt5, Homebrew, and other third-party
-Stellarium packages are not supported by this binary.
+build inputs are Qt 6.9.3, Xcode 26.5 with Apple Clang 21, a macOS 12.0
+deployment target, and both `arm64` and `x86_64` slices. Qt5, Homebrew, and
+other third-party Stellarium packages are not supported by this binary.
 
 The workflow verifies both architecture slices, deployment target, Qt plugin
 metadata, `@rpath` dependencies, unresolved Stellarium symbols, the official
