@@ -13,14 +13,17 @@
 #include "StelObjectMgr.hpp"
 #include "StelObserver.hpp"
 #include "StelLocation.hpp"
+#include "StelLocaleMgr.hpp"
 #include "StelPainter.hpp"
 #include "StelProjector.hpp"
 #include "StelUtils.hpp"
 
 #include <QDebug>
+#include <QCoreApplication>
 #include <QFont>
 #include <QSettings>
 #include <QString>
+#include <QTranslator>
 #include <QVector>
 
 #include <algorithm>
@@ -354,7 +357,7 @@ private:
 
 std::vector<VisibilityMath::CrescentEvent> crescentEventsForConjunction(
     StelCore* core, const PlanetP& sun, const PlanetP& moon,
-    double conjunctionJde)
+    double conjunctionJde, VisibilityMath::NavigationMode mode)
 {
     std::vector<VisibilityMath::CrescentEvent> events;
     if (!core || !sun || !moon || !std::isfinite(conjunctionJde))
@@ -366,27 +369,33 @@ std::vector<VisibilityMath::CrescentEvent> crescentEventsForConjunction(
     const double conjunctionOffset = core->getUTCOffset(conjunctionJd) / 24.0;
     const double conjunctionLocalDay =
         std::floor(conjunctionJd + conjunctionOffset + 0.5);
-    auto appendIfVisible = [&](const std::optional<double>& bestTime,
-                               VisibilityMath::CrescentEventKind kind,
-                               double referenceJd)
+    auto appendEvent = [&](double solarEventJd,
+                           const std::optional<double>& bestTime,
+                           VisibilityMath::CrescentEventKind kind,
+                           double referenceJd)
     {
-        if (!bestTime)
-            return;
-        core->setJD(*bestTime);
-        core->update(0.0);
-        const double moonAltitudeDeg = altitudeRad(moon->getAltAzPosGeometric(core))
-                                       * RAD2DEG;
-        const double eventJde = *bestTime + jdeMinusJd;
-        if (VisibilityMath::validCrescentEvent(*bestTime, eventJde,
-                                               conjunctionJde, moonAltitudeDeg))
+        double bestTimeMoonAltitudeDeg = std::numeric_limits<double>::quiet_NaN();
+        if (bestTime)
         {
-            events.push_back({*bestTime, conjunctionJde,
-                              VisibilityMath::conjunctionDayIndex(eventJde,
-                                                                   conjunctionJde),
-                              kind});
+            core->setJD(*bestTime);
+            core->update(0.0);
+            bestTimeMoonAltitudeDeg =
+                altitudeRad(moon->getAltAzPosGeometric(core)) * RAD2DEG;
+            core->setJD(referenceJd);
+            core->update(0.0);
         }
-        core->setJD(referenceJd);
-        core->update(0.0);
+
+        const auto navigationTime = VisibilityMath::chooseNavigationTime(
+            mode, kind, solarEventJd, bestTime, bestTimeMoonAltitudeDeg);
+        if (!navigationTime)
+            return;
+        const double eventJde = navigationTime->jd + jdeMinusJd;
+        if (!VisibilityMath::eventInConjunctionWindow(eventJde, conjunctionJde))
+            return;
+        events.push_back({navigationTime->jd, conjunctionJde,
+                          VisibilityMath::conjunctionDayIndex(eventJde,
+                                                               conjunctionJde),
+                          kind, mode, navigationTime->basis});
     };
 
     // Eleven local days safely cover the seven conjunction bins at every UTC offset.
@@ -410,10 +419,12 @@ std::vector<VisibilityMath::CrescentEvent> crescentEventsForConjunction(
         if (validSet(sunRts) && validSet(moonRts))
             evening = VisibilityMath::eveningBestTime(sunRts[2], moonRts[2]);
 
-        appendIfVisible(morning, VisibilityMath::CrescentEventKind::Morning,
-                        referenceJd);
-        appendIfVisible(evening, VisibilityMath::CrescentEventKind::Evening,
-                        referenceJd);
+        if (validRise(sunRts))
+            appendEvent(sunRts[0], morning,
+                        VisibilityMath::CrescentEventKind::Morning, referenceJd);
+        if (validSet(sunRts))
+            appendEvent(sunRts[2], evening,
+                        VisibilityMath::CrescentEventKind::Evening, referenceJd);
     }
 
     VisibilityMath::sortCrescentEvents(events);
@@ -449,6 +460,39 @@ std::vector<VisibilityBand> bandsForCriterion(const QString& criterion,
 
 } // namespace
 
+VisibilityContoursStelPluginInterface::VisibilityContoursStelPluginInterface()
+    : arabicTranslator(new QTranslator(this))
+    , translatorInstalled(false)
+{
+    connect(&StelApp::getInstance(), &StelApp::languageChanged,
+            this, &VisibilityContoursStelPluginInterface::refreshTranslation);
+    refreshTranslation();
+}
+
+VisibilityContoursStelPluginInterface::~VisibilityContoursStelPluginInterface()
+{
+    if (translatorInstalled)
+        QCoreApplication::removeTranslator(arabicTranslator);
+}
+
+void VisibilityContoursStelPluginInterface::refreshTranslation()
+{
+    if (translatorInstalled)
+    {
+        QCoreApplication::removeTranslator(arabicTranslator);
+        translatorInstalled = false;
+    }
+    const QString language = StelApp::getInstance().getLocaleMgr().getAppLanguage();
+    if (!VisibilityMath::useArabicForProgramLanguage(language.toStdString()))
+        return;
+    if (!arabicTranslator->load(QStringLiteral(":/i18n/VisibilityContours_ar.qm")))
+    {
+        qWarning() << "VisibilityContours: could not load embedded Arabic translation";
+        return;
+    }
+    translatorInstalled = QCoreApplication::installTranslator(arabicTranslator);
+}
+
 StelModule* VisibilityContoursStelPluginInterface::getStelModule() const
 {
     return new VisibilityContours();
@@ -458,16 +502,20 @@ StelPluginInfo VisibilityContoursStelPluginInterface::getPluginInfo() const
 {
     StelPluginInfo info;
     info.id = "VisibilityContours";
-    info.displayedName = "Visibility Contours";
-    info.authors = "Sultan ALKHULAIFI";
+    info.displayedName = tr("Visibility Contours");
+    info.authors = tr("Sultan ALKHULAIFI");
     info.contact = "qlifee@gmail.com";
-    info.description = "Draws selectable Odeh and Yallop lunar-crescent visibility bands and reports observational V and best time."
-                       "<br/><br/><b>Calculation method</b><br/>"
-                       "All contours and displayed V values use the Odeh visibility equation, with airless geometric topocentric ARCV and topocentric crescent width W."
-                       "<br/><br/>When Yallop is selected, its q boundaries are converted to equivalent Odeh V boundaries using the Moon's current horizontal parallax. Contour labels and Moon information therefore show equivalent V values, not q values."
-                       "<br/><br/><b>References:</b><br/>"
-                       "<a href=\"https://doi.org/10.1007/s10686-005-9002-5\">Odeh — <i>New Criterion for Lunar Crescent Visibility</i></a><br/>"
-                       "<a href=\"https://assets.admiralty.co.uk/public/documents/2025-08/HMNAO%20Technical%20Notes%20Index.pdf?VersionId=DfKow0usAp5ANPUBA_pWq4.DJ6nbkX2q\">Yallop — <i>A Method for Predicting the First Sighting of the New Crescent Moon</i></a>";
+    info.description = tr("Draws selectable Odeh and Yallop lunar-crescent visibility bands and reports observational V and best time.")
+                       + QStringLiteral("<br/><br/><b>")
+                       + tr("Calculation method")
+                       + QStringLiteral("</b><br/>")
+                       + tr("All contours and displayed V values use the Odeh visibility equation, with airless geometric topocentric ARCV and topocentric crescent width W.")
+                       + QStringLiteral("<br/><br/>")
+                       + tr("When Yallop is selected, its q boundaries are converted to equivalent Odeh V boundaries using the Moon's current horizontal parallax. Contour labels and Moon information therefore show equivalent V values, not q values.")
+                       + QStringLiteral(
+                           "<br/><br/><b>References:</b><br/>"
+                           "<a href=\"https://doi.org/10.1007/s10686-005-9002-5\">Odeh — <i>New Criterion for Lunar Crescent Visibility</i></a><br/>"
+                           "<a href=\"https://assets.admiralty.co.uk/public/documents/2025-08/HMNAO%20Technical%20Notes%20Index.pdf?VersionId=DfKow0usAp5ANPUBA_pWq4.DJ6nbkX2q\">Yallop — <i>A Method for Predicting the First Sighting of the New Crescent Moon</i></a>");
     info.version = VISIBILITYCONTOURS_PLUGIN_VERSION;
     info.license = VISIBILITYCONTOURS_PLUGIN_LICENSE;
     info.startByDefault = true;
@@ -491,7 +539,7 @@ VisibilityContours::VisibilityContours()
     , cachedBestV(std::numeric_limits<double>::quiet_NaN())
     , cachedBestAvailable(false)
     , selectedCriterion(QStringLiteral("Yallop"))
-    , bandsFilled(false)
+    , bandsFilled(true)
     , navigatorShown(false)
     , navigatorEarthAvailable(true)
     , settings(nullptr)
@@ -584,7 +632,7 @@ void VisibilityContours::readSettings()
     settings->beginGroup(QStringLiteral("VisibilityContours"));
     selectedCriterion = QStringLiteral("Yallop");
     settings->setValue(QStringLiteral("criterion"), selectedCriterion);
-    bandsFilled = settings->value(QStringLiteral("fill_bands"), false).toBool();
+    bandsFilled = settings->value(QStringLiteral("fill_bands"), true).toBool();
     navigatorShown = settings->value(QStringLiteral("show_navigator"), false).toBool();
     settings->endGroup();
     settings->sync();
@@ -616,6 +664,19 @@ void VisibilityContours::addMoonInformation(StelCore* core)
     const QList<StelObjectP>& selected = StelApp::getInstance().getStelObjectMgr().getSelectedObject();
     if (selected.isEmpty() || selected.first()->getEnglishName() != QStringLiteral("Moon"))
         return;
+
+    const double moonAltitudeDeg =
+        altitudeRad(moon->getAltAzPosGeometric(core)) * RAD2DEG;
+    if (!VisibilityMath::moonIsUp(moonAltitudeDeg))
+    {
+        moon->addToExtraInfoString(StelObject::OtherCoord,
+                                   tr("V now: -<br/>"));
+        moon->addToExtraInfoString(StelObject::OtherCoord,
+                                   tr("Best time: -<br/>"));
+        moon->addToExtraInfoString(StelObject::OtherCoord,
+                                   tr("V at best time: -<br/>"));
+        return;
+    }
 
     const double vNow = observationalVNow(core, sun, moon);
     moon->addToExtraInfoString(StelObject::OtherCoord,
@@ -696,15 +757,26 @@ void VisibilityContours::addMoonInformation(StelCore* core)
 
 void VisibilityContours::navigateForward()
 {
-    navigateToCrescent(1);
+    navigateToCrescent(1, VisibilityMath::NavigationMode::MoonUpOnly);
 }
 
 void VisibilityContours::navigateBackward()
 {
-    navigateToCrescent(-1);
+    navigateToCrescent(-1, VisibilityMath::NavigationMode::MoonUpOnly);
 }
 
-void VisibilityContours::navigateToCrescent(int direction)
+void VisibilityContours::navigateAllForward()
+{
+    navigateToCrescent(1, VisibilityMath::NavigationMode::MoonUpOrDown);
+}
+
+void VisibilityContours::navigateAllBackward()
+{
+    navigateToCrescent(-1, VisibilityMath::NavigationMode::MoonUpOrDown);
+}
+
+void VisibilityContours::navigateToCrescent(
+    int direction, VisibilityMath::NavigationMode mode)
 {
     StelCore* core = StelApp::getInstance().getCore();
     if (!core || direction == 0 || !navigatorDialog)
@@ -714,7 +786,8 @@ void VisibilityContours::navigateToCrescent(int direction)
     if (!currentPlanet || currentPlanet->getEnglishName() != QStringLiteral("Earth"))
     {
         navigatorEarthAvailable = false;
-        navigatorDialog->setStatus(tr("Moon navigation is available only on Earth"));
+        navigatorDialog->setStatusMessage(
+            CrescentNavigatorDialog::StatusMessage::EarthOnly);
         navigatorDialog->setNavigationEnabled(false);
         return;
     }
@@ -724,7 +797,8 @@ void VisibilityContours::navigateToCrescent(int direction)
     StelObjectMgr* objectMgr = GETSTELMODULE(StelObjectMgr);
     if (!solarSystem || !movement || !objectMgr)
     {
-        navigatorDialog->setStatus(tr("Moon navigation is not available"));
+        navigatorDialog->setStatusMessage(
+            CrescentNavigatorDialog::StatusMessage::Unavailable);
         return;
     }
 
@@ -733,7 +807,8 @@ void VisibilityContours::navigateToCrescent(int direction)
     const PlanetP earth = solarSystem->getEarth();
     if (!sun || !moon || !earth)
     {
-        navigatorDialog->setStatus(tr("Moon navigation is not available"));
+        navigatorDialog->setStatusMessage(
+            CrescentNavigatorDialog::StatusMessage::Unavailable);
         return;
     }
 
@@ -741,7 +816,8 @@ void VisibilityContours::navigateToCrescent(int direction)
     double conjunctionJde = 0.0;
     if (!findConjunctionFromAnyPhase(moon, earth, core->getJDE(), conjunctionJde))
     {
-        navigatorDialog->setStatus(tr("No valid Moon event found"));
+        navigatorDialog->setStatusMessage(
+            CrescentNavigatorDialog::StatusMessage::NotFound);
         return;
     }
 
@@ -749,7 +825,7 @@ void VisibilityContours::navigateToCrescent(int direction)
     for (int lunation = 0; lunation < MAX_NAVIGATOR_LUNATIONS; ++lunation)
     {
         const auto events = crescentEventsForConjunction(core, sun, moon,
-                                                          conjunctionJde);
+                                                          conjunctionJde, mode);
         destination = VisibilityMath::adjacentCrescentEvent(
             events, currentJd, direction, NAVIGATION_EPSILON_DAYS);
         if (destination)
@@ -764,7 +840,8 @@ void VisibilityContours::navigateToCrescent(int direction)
 
     if (!destination)
     {
-        navigatorDialog->setStatus(tr("No valid Moon event found"));
+        navigatorDialog->setStatusMessage(
+            CrescentNavigatorDialog::StatusMessage::NotFound);
         return;
     }
 
@@ -772,6 +849,15 @@ void VisibilityContours::navigateToCrescent(int direction)
     core->setJD(destination->jd);
     core->setTimeRate(0.0);
     core->update(0.0);
+
+    objectMgr->setFlagSelectedObjectPointer(true);
+    solarSystem->setFlagPointer(true);
+    if (settings)
+    {
+        settings->setValue(QStringLiteral("viewing/flag_show_selection_marker"), true);
+        settings->setValue(QStringLiteral("astro/flag_planets_pointers"), true);
+        settings->sync();
+    }
 
     objectMgr->setSelectedObject(qSharedPointerCast<StelObject>(moon),
                                  StelModule::ReplaceSelection);
@@ -792,20 +878,18 @@ void VisibilityContours::navigateToCrescent(int direction)
                                     &year, &month, &day);
     const QString localTime = QString::fromStdString(
         VisibilityMath::formatLocalTime(destination->jd, utcOffset));
-    const QString kind = destination->kind == VisibilityMath::CrescentEventKind::Morning
-                             ? tr("Morning") : tr("Evening");
-    const QString dayText = destination->dayIndex >= 0
-                                ? QStringLiteral("+%1").arg(destination->dayIndex)
-                                : QString::number(destination->dayIndex);
-    navigatorDialog->setStatus(
-        tr("%1 · day %2").arg(kind, dayText),
-        tr("%1-%2-%3 · %4")
-            .arg(year, 4, 10, QLatin1Char('0'))
-            .arg(month, 2, 10, QLatin1Char('0'))
-            .arg(day, 2, 10, QLatin1Char('0'))
-            .arg(localTime));
+    const QString localDate = QStringLiteral("%1-%2-%3")
+                                  .arg(year, 4, 10, QLatin1Char('0'))
+                                  .arg(month, 2, 10, QLatin1Char('0'))
+                                  .arg(day, 2, 10, QLatin1Char('0'));
+    navigatorDialog->setEventStatus(destination->kind, destination->dayIndex,
+                                    localDate, localTime, destination->basis);
     qInfo() << "VisibilityContours navigator selected"
-            << kind << "day" << destination->dayIndex << "JD" << destination->jd;
+            << (destination->kind == VisibilityMath::CrescentEventKind::Morning
+                    ? "Morning" : "Evening")
+            << "day" << destination->dayIndex
+            << "basis" << static_cast<int>(destination->basis)
+            << "JD" << destination->jd;
 }
 
 void VisibilityContours::updateNavigatorAvailability(StelCore* core)
@@ -819,9 +903,9 @@ void VisibilityContours::updateNavigatorAvailability(StelCore* core)
         return;
     navigatorEarthAvailable = onEarth;
     navigatorDialog->setNavigationEnabled(onEarth);
-    navigatorDialog->setStatus(onEarth
-        ? tr("Ready")
-        : tr("Moon navigation is available only on Earth"));
+    navigatorDialog->setStatusMessage(
+        onEarth ? CrescentNavigatorDialog::StatusMessage::Ready
+                : CrescentNavigatorDialog::StatusMessage::EarthOnly);
 }
 
 double VisibilityContours::getCallOrder(StelModuleActionName actionName) const
@@ -1066,7 +1150,7 @@ void VisibilityContours::draw(StelCore* core)
     // Status label close to the Sun; useful for checking the automatic day filter.
     painter.setColor(1.0f, 1.0f, 1.0f, 0.90f);
     painter.drawText(sunAltAz,
-                     QString("Conjunction day %1   Δ=%2 d")
+                     tr("Conjunction day %1   Δ=%2 d")
                          .arg(dayIndex >= 0 ? QString("+%1").arg(dayIndex)
                                             : QString::number(dayIndex))
                          .arg(daysFromConjunction, 0, 'f', 2),

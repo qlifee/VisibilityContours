@@ -2,6 +2,7 @@
 #define CRESCENTNAVIGATORDIALOG_HPP
 
 #include "StelDialog.hpp"
+#include "VisibilityMath.hpp"
 
 class VisibilityContours;
 class Ui_CrescentNavigatorDialog;
@@ -11,11 +12,22 @@ class CrescentNavigatorDialog : public StelDialog
     Q_OBJECT
 
 public:
+    enum class StatusMessage
+    {
+        Ready,
+        EarthOnly,
+        Unavailable,
+        NotFound
+    };
+
     explicit CrescentNavigatorDialog(VisibilityContours* module);
     ~CrescentNavigatorDialog() override;
 
-    void setStatus(const QString& primaryText,
-                   const QString& secondaryText = QString());
+    void setStatusMessage(StatusMessage message);
+    void setEventStatus(VisibilityMath::CrescentEventKind kind,
+                        int dayIndex, const QString& localDate,
+                        const QString& localTime,
+                        VisibilityMath::EventTimeBasis basis);
     void setNavigationEnabled(bool enabled);
 
 public slots:
@@ -30,8 +42,13 @@ private:
 
     VisibilityContours* module;
     Ui_CrescentNavigatorDialog* ui;
-    QString pendingPrimaryStatus;
-    QString pendingSecondaryStatus;
+    StatusMessage pendingMessage;
+    bool pendingIsEvent;
+    VisibilityMath::CrescentEventKind pendingEventKind;
+    VisibilityMath::EventTimeBasis pendingEventBasis;
+    int pendingDayIndex;
+    QString pendingLocalDate;
+    QString pendingLocalTime;
     bool pendingEnabled;
 };
 

@@ -16,6 +16,13 @@ int main()
 {
     using namespace VisibilityMath;
 
+    assert(useArabicForProgramLanguage("ar"));
+    assert(useArabicForProgramLanguage("ar_QA"));
+    assert(useArabicForProgramLanguage("AR"));
+    assert(!useArabicForProgramLanguage("en"));
+    assert(!useArabicForProgramLanguage("fa"));
+    assert(!useArabicForProgramLanguage("a"));
+
     assert(close(CONVENTIONAL_SUN_CENTER_ALTITUDE_DEG, -0.8333));
     assert(close(theoreticalWidth(0.0, 0.0), 0.0));
     assert(close(illuminatedWidth(0.1, 0.5), 3.0));
@@ -64,12 +71,47 @@ int main()
 
     assert(conjunctionDayIndex(100.49, 100.0) == 0);
     assert(conjunctionDayIndex(100.50, 100.0) == 1);
+    assert(eventInConjunctionWindow(97.0, 100.0));
+    assert(eventInConjunctionWindow(103.0, 100.0));
+    assert(!eventInConjunctionWindow(96.0, 100.0));
+    assert(!eventInConjunctionWindow(104.0, 100.0));
+    assert(!moonIsUp(-0.000001));
+    assert(!moonIsUp(0.0));
+    assert(moonIsUp(0.000001));
     assert(validCrescentEvent(97.0, 97.0, 100.0, 0.01));
     assert(validCrescentEvent(103.0, 103.0, 100.0, 0.01));
     assert(!validCrescentEvent(96.0, 96.0, 100.0, 0.01));
     assert(!validCrescentEvent(104.0, 104.0, 100.0, 0.01));
     assert(!validCrescentEvent(99.0, 99.0, 100.0, 0.0));
     assert(!validCrescentEvent(99.0, 99.0, 100.0, -0.01));
+
+    const std::optional<double> bestTime = 100.25;
+    const auto upOnlyBest = chooseNavigationTime(
+        NavigationMode::MoonUpOnly, CrescentEventKind::Morning,
+        100.30, bestTime, 0.01);
+    assert(upOnlyBest && close(upOnlyBest->jd, 100.25));
+    assert(upOnlyBest->basis == EventTimeBasis::BestTime);
+    assert(!chooseNavigationTime(
+        NavigationMode::MoonUpOnly, CrescentEventKind::Morning,
+        100.30, bestTime, 0.0));
+    const auto allBest = chooseNavigationTime(
+        NavigationMode::MoonUpOrDown, CrescentEventKind::Evening,
+        100.70, bestTime, 0.01);
+    assert(allBest && close(allBest->jd, 100.25));
+    assert(allBest->basis == EventTimeBasis::BestTime);
+    const auto sunriseFallback = chooseNavigationTime(
+        NavigationMode::MoonUpOrDown, CrescentEventKind::Morning,
+        100.30, bestTime, 0.0);
+    assert(sunriseFallback && close(sunriseFallback->jd, 100.30));
+    assert(sunriseFallback->basis == EventTimeBasis::Sunrise);
+    const auto sunsetFallback = chooseNavigationTime(
+        NavigationMode::MoonUpOrDown, CrescentEventKind::Evening,
+        100.70, std::nullopt, -1.0);
+    assert(sunsetFallback && close(sunsetFallback->jd, 100.70));
+    assert(sunsetFallback->basis == EventTimeBasis::Sunset);
+    assert(!chooseNavigationTime(
+        NavigationMode::MoonUpOrDown, CrescentEventKind::Evening,
+        std::nan(""), std::nullopt, -1.0));
 
     std::vector<CrescentEvent> events = {
         {101.75, 100.0, 2, CrescentEventKind::Evening},

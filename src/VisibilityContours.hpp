@@ -3,10 +3,12 @@
 
 #include "StelModule.hpp"
 #include "StelPluginInterface.hpp"
+#include "VisibilityMath.hpp"
 
 #include <QObject>
 
 class QSettings;
+class QTranslator;
 class CrescentNavigatorDialog;
 class VisibilityContoursDialog;
 
@@ -37,6 +39,8 @@ public slots:
     void setNavigatorVisible(bool visible);
     void navigateForward();
     void navigateBackward();
+    void navigateAllForward();
+    void navigateAllBackward();
 
 signals:
     void criterionChanged(const QString& value);
@@ -47,7 +51,7 @@ private:
     void readSettings();
     void saveSettings() const;
     void addMoonInformation(StelCore* core);
-    void navigateToCrescent(int direction);
+    void navigateToCrescent(int direction, VisibilityMath::NavigationMode mode);
     void updateNavigatorAvailability(StelCore* core);
 
     double cachedForJDE;
@@ -81,8 +85,18 @@ class VisibilityContoursStelPluginInterface : public QObject, public StelPluginI
     Q_INTERFACES(StelPluginInterface)
 
 public:
+    VisibilityContoursStelPluginInterface();
+    ~VisibilityContoursStelPluginInterface() override;
+
     StelModule* getStelModule() const override;
     StelPluginInfo getPluginInfo() const override;
+
+private slots:
+    void refreshTranslation();
+
+private:
+    QTranslator* arabicTranslator;
+    bool translatorInstalled;
 };
 
 #endif // VISIBILITYCONTOURS_HPP

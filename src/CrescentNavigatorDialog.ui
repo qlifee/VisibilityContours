@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>400</width>
-    <height>142</height>
+    <height>238</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -72,7 +72,17 @@
        </widget>
       </item>
       <item>
-       <layout class="QHBoxLayout" name="buttonLayout">
+       <widget class="QLabel" name="moonUpOnlyLabel">
+        <property name="text">
+         <string>Only Moon up</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="moonUpButtonLayout">
         <item>
          <widget class="QPushButton" name="backButton">
           <property name="minimumSize">
@@ -85,7 +95,7 @@
            <string>Previous Moon best time</string>
           </property>
           <property name="text">
-           <string>◀</string>
+           <string notr="true">◀</string>
           </property>
          </widget>
         </item>
@@ -101,7 +111,53 @@
            <string>Next Moon best time</string>
           </property>
           <property name="text">
-           <string>▶</string>
+           <string notr="true">▶</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLabel" name="allEventsLabel">
+        <property name="text">
+         <string>Moon up or down</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="allEventsButtonLayout">
+        <item>
+         <widget class="QPushButton" name="allBackButton">
+          <property name="minimumSize">
+           <size>
+            <width>80</width>
+            <height>32</height>
+           </size>
+          </property>
+          <property name="toolTip">
+           <string>Previous Moon event</string>
+          </property>
+          <property name="text">
+           <string notr="true">◀</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="allForwardButton">
+          <property name="minimumSize">
+           <size>
+            <width>80</width>
+            <height>32</height>
+           </size>
+          </property>
+          <property name="toolTip">
+           <string>Next Moon event</string>
+          </property>
+          <property name="text">
+           <string notr="true">▶</string>
           </property>
          </widget>
         </item>

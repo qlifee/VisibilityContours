@@ -1,6 +1,7 @@
 #include "CrescentNavigatorDialog.hpp"
 
 #include "Dialog.hpp"
+#include "StelApp.hpp"
 #include "StelFileMgr.hpp"
 #include "StelMainView.hpp"
 #include "VisibilityContours.hpp"
@@ -14,7 +15,11 @@ CrescentNavigatorDialog::CrescentNavigatorDialog(VisibilityContours* contours)
     : StelDialog("VisibilityContoursNavigator")
     , module(contours)
     , ui(new Ui_CrescentNavigatorDialog)
-    , pendingPrimaryStatus(tr("Ready"))
+    , pendingMessage(StatusMessage::Ready)
+    , pendingIsEvent(false)
+    , pendingEventKind(VisibilityMath::CrescentEventKind::Morning)
+    , pendingEventBasis(VisibilityMath::EventTimeBasis::BestTime)
+    , pendingDayIndex(0)
     , pendingEnabled(true)
 {
     connect(this, &StelDialog::visibleChanged, this, [this](bool visible)
@@ -35,7 +40,11 @@ void CrescentNavigatorDialog::createDialogContent()
     applyStatus();
     ui->backButton->setEnabled(pendingEnabled);
     ui->forwardButton->setEnabled(pendingEnabled);
+    ui->allBackButton->setEnabled(pendingEnabled);
+    ui->allForwardButton->setEnabled(pendingEnabled);
 
+    connect(&StelApp::getInstance(), &StelApp::languageChanged,
+            this, &CrescentNavigatorDialog::retranslate);
     connect(ui->titleBar, &TitleBar::closeClicked,
             this, &StelDialog::close);
     connect(ui->titleBar, &TitleBar::movedTo,
@@ -44,6 +53,10 @@ void CrescentNavigatorDialog::createDialogContent()
             module, &VisibilityContours::navigateBackward);
     connect(ui->forwardButton, &QPushButton::clicked,
             module, &VisibilityContours::navigateForward);
+    connect(ui->allBackButton, &QPushButton::clicked,
+            module, &VisibilityContours::navigateAllBackward);
+    connect(ui->allForwardButton, &QPushButton::clicked,
+            module, &VisibilityContours::navigateAllForward);
 }
 
 void CrescentNavigatorDialog::setVisible(bool visible)
@@ -89,11 +102,24 @@ void CrescentNavigatorDialog::setVisible(bool visible)
     }
 }
 
-void CrescentNavigatorDialog::setStatus(const QString& primaryText,
-                                        const QString& secondaryText)
+void CrescentNavigatorDialog::setStatusMessage(StatusMessage message)
 {
-    pendingPrimaryStatus = primaryText;
-    pendingSecondaryStatus = secondaryText;
+    pendingMessage = message;
+    pendingIsEvent = false;
+    applyStatus();
+}
+
+void CrescentNavigatorDialog::setEventStatus(
+    VisibilityMath::CrescentEventKind kind, int dayIndex,
+    const QString& localDate, const QString& localTime,
+    VisibilityMath::EventTimeBasis basis)
+{
+    pendingIsEvent = true;
+    pendingEventKind = kind;
+    pendingEventBasis = basis;
+    pendingDayIndex = dayIndex;
+    pendingLocalDate = localDate;
+    pendingLocalTime = localTime;
     applyStatus();
 }
 
@@ -104,6 +130,8 @@ void CrescentNavigatorDialog::setNavigationEnabled(bool enabled)
     {
         ui->backButton->setEnabled(enabled);
         ui->forwardButton->setEnabled(enabled);
+        ui->allBackButton->setEnabled(enabled);
+        ui->allForwardButton->setEnabled(enabled);
     }
 }
 
@@ -120,7 +148,53 @@ void CrescentNavigatorDialog::applyStatus()
 {
     if (!dialog)
         return;
-    ui->statusLabel->setText(pendingPrimaryStatus);
-    ui->timeLabel->setText(pendingSecondaryStatus);
+    if (pendingIsEvent)
+    {
+        const QString kind = pendingEventKind == VisibilityMath::CrescentEventKind::Morning
+                                 ? tr("Morning") : tr("Evening");
+        QString basis;
+        switch (pendingEventBasis)
+        {
+        case VisibilityMath::EventTimeBasis::Sunrise:
+            basis = tr("Sunrise");
+            break;
+        case VisibilityMath::EventTimeBasis::Sunset:
+            basis = tr("Sunset");
+            break;
+        case VisibilityMath::EventTimeBasis::BestTime:
+        default:
+            basis = tr("Best time");
+            break;
+        }
+        const QString dayText = pendingDayIndex >= 0
+                                    ? QStringLiteral("+%1").arg(pendingDayIndex)
+                                    : QString::number(pendingDayIndex);
+        ui->statusLabel->setText(
+            tr("%1 · day %2 · %3").arg(kind, dayText, basis));
+        ui->timeLabel->setText(
+            QStringLiteral("%1 · %2").arg(pendingLocalDate, pendingLocalTime));
+    }
+    else
+    {
+        QString status;
+        switch (pendingMessage)
+        {
+        case StatusMessage::EarthOnly:
+            status = tr("Moon navigation is available only on Earth");
+            break;
+        case StatusMessage::Unavailable:
+            status = tr("Moon navigation is not available");
+            break;
+        case StatusMessage::NotFound:
+            status = tr("No valid Moon event found");
+            break;
+        case StatusMessage::Ready:
+        default:
+            status = tr("Ready");
+            break;
+        }
+        ui->statusLabel->setText(status);
+        ui->timeLabel->clear();
+    }
     dialog->adjustSize();
 }

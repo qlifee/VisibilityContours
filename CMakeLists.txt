@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(VisibilityContours VERSION 0.3.0 LANGUAGES CXX)
+project(VisibilityContours VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -24,7 +24,7 @@ if(NOT EXISTS "${STELLARIUM_BUILD_DIR}/CMakeCache.txt")
         "STELLARIUM_BUILD_DIR must point to a configured Stellarium 26.2 build tree")
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL LinguistTools)
 
 add_library(VisibilityContours MODULE
     src/CrescentNavigatorDialog.cpp
@@ -60,6 +60,12 @@ target_link_libraries(VisibilityContours PRIVATE
     Qt6::Gui
     Qt6::Widgets
     Qt6::OpenGL
+)
+
+qt_add_translations(VisibilityContours
+    IMMEDIATE_CALL
+    TS_FILES translations/VisibilityContours_ar.ts
+    RESOURCE_PREFIX "/i18n"
 )
 
 include(CTest)

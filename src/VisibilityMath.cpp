@@ -15,6 +15,13 @@ constexpr double DEG2RAD = PI / 180.0;
 constexpr double RAD2DEG = 180.0 / PI;
 }
 
+bool useArabicForProgramLanguage(const std::string& languageCode)
+{
+    return languageCode.size() >= 2
+           && (languageCode[0] == 'a' || languageCode[0] == 'A')
+           && (languageCode[1] == 'r' || languageCode[1] == 'R');
+}
+
 double odehPolynomial(double widthArcmin)
 {
     return -0.1018 * widthArcmin * widthArcmin * widthArcmin
@@ -136,14 +143,38 @@ int conjunctionDayIndex(double eventJde, double conjunctionJde)
     return static_cast<int>(std::lround(eventJde - conjunctionJde));
 }
 
+bool eventInConjunctionWindow(double eventJde, double conjunctionJde)
+{
+    const int dayIndex = conjunctionDayIndex(eventJde, conjunctionJde);
+    return dayIndex >= -3 && dayIndex <= 3;
+}
+
+bool moonIsUp(double moonAltitudeDeg)
+{
+    return std::isfinite(moonAltitudeDeg) && moonAltitudeDeg > 0.0;
+}
+
 bool validCrescentEvent(double eventJd, double eventJde, double conjunctionJde,
                         double moonAltitudeDeg)
 {
-    if (!std::isfinite(eventJd) || !std::isfinite(moonAltitudeDeg)
-        || !(moonAltitudeDeg > 0.0))
-        return false;
-    const int dayIndex = conjunctionDayIndex(eventJde, conjunctionJde);
-    return dayIndex >= -3 && dayIndex <= 3;
+    return std::isfinite(eventJd) && moonIsUp(moonAltitudeDeg)
+           && eventInConjunctionWindow(eventJde, conjunctionJde);
+}
+
+std::optional<NavigationTime> chooseNavigationTime(
+    NavigationMode mode, CrescentEventKind kind, double solarEventJd,
+    const std::optional<double>& bestTimeJd, double bestTimeMoonAltitudeDeg)
+{
+    const bool validBestTime = bestTimeJd && std::isfinite(*bestTimeJd)
+                               && moonIsUp(bestTimeMoonAltitudeDeg);
+    if (validBestTime)
+        return NavigationTime{*bestTimeJd, EventTimeBasis::BestTime};
+    if (mode == NavigationMode::MoonUpOnly || !std::isfinite(solarEventJd))
+        return std::nullopt;
+    return NavigationTime{solarEventJd,
+                          kind == CrescentEventKind::Morning
+                              ? EventTimeBasis::Sunrise
+                              : EventTimeBasis::Sunset};
 }
 
 void sortCrescentEvents(std::vector<CrescentEvent>& events)

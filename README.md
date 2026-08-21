@@ -4,7 +4,7 @@ Standalone Stellarium plugin that draws selectable crescent-visibility bands
 around the Sun and adds observational visibility information when the Moon is
 selected.
 
-- Current version: **0.3.0**
+- Current version: **0.4.0**
 
 The Odeh scheme uses contiguous categories:
 
@@ -23,12 +23,20 @@ and information-panel values are equivalent Odeh V values, including when
 Yallop is selected.
 
 Open **Configuration window → Plugins → Visibility Contours → Configure** to
-select Odeh or Yallop contours, optionally enable translucent band fills, and
-show the floating Moon Navigator. The fill and navigator settings persist
-across restarts; the criterion resets to Yallop each time the plugin starts.
-The main plugin page contains the calculation note and reference links. Select
-the Moon to see `V now`, the nearest valid morning/evening best time, and `V at
-best time` in Stellarium's normal object-information panel.
+select Odeh or Yallop contours, control translucent band fills, and show the
+floating Moon Navigator. Band fills are enabled for new profiles; an explicitly
+saved fill setting and the navigator setting persist across restarts. The
+criterion resets to Yallop each time the plugin starts. The main plugin page
+contains the calculation note and reference links. Select the Moon to see `V
+now`, the nearest valid morning/evening best time, and `V at best time` in
+Stellarium's normal object-information panel.
+
+When Stellarium's program language is Arabic, plugin-owned dialogs, tooltips,
+status text, Moon information, conjunction labels, name, description, and
+displayed author use Arabic. Every other program language uses English. Runtime
+plugin UI follows language changes immediately; Stellarium's cached Plugins-page
+metadata may require a restart. Names and titles within the reference section,
+links, Western numerals, and scientific notation remain unchanged.
 
 ## Geometry
 
@@ -79,6 +87,9 @@ calculates both valid candidates and displays the one nearest the current
 Stellarium clock, in the observer's local civil time.
 The information panel shows time only, formatted like `17h55m15s`.
 
+If the selected Moon is at or below the airless geometric horizon, all three
+plugin rows display `-` instead of observational values or a best time.
+
 Sunrise and sunset use a geometric Sun-center altitude of `-0.8333°`, the
 conventional upper-limb sunrise/sunset threshold. Moonrise, Moonset, and the
 Moon-up test use the airless geometric center horizon at `0°`. The contour
@@ -88,22 +99,32 @@ valid calculated best times even when the Moon-set or Moon-rise lag is short.
 ## Moon Navigator
 
 Enable **Show Moon navigator** in the plugin configuration to open a movable
-panel with previous and next buttons. The configuration window is also
-movable, and both windows remember their positions. Forward selects the first
-valid best-time event strictly after the current Stellarium time; Back selects
-the first strictly before it. Candidates are checked chronologically—morning,
-then evening, then the next morning—within conjunction days `-3` through `+3`.
-Invalid rise/set pairs, nonpositive Moon lags, polar failures, and events where
-the Moon is at or below the geometric horizon are skipped automatically.
+panel with two previous/next button rows. The configuration window is also
+movable, and both windows remember their positions.
+
+- **Only Moon up** visits valid `4/9`-lag best times for which the Moon is
+  strictly above the airless geometric horizon.
+- **Moon up or down** prefers that same best time when it is valid and the Moon
+  is up; otherwise it visits the corresponding conventional sunrise or sunset.
+
+Forward selects the first qualifying event strictly after the current
+Stellarium time; Back selects the first strictly before it. Candidates are
+checked chronologically—morning, then evening, then the next morning—within
+conjunction days `-3` through `+3`. Invalid rise/set pairs, nonpositive Moon
+lags, polar failures, and missing sunrise/sunset events are skipped as
+appropriate for the selected row.
 
 If no qualifying event remains in the current conjunction window, navigation
 continues into the adjacent lunation. At a selected event Stellarium pauses,
 selects and centers the Moon, enables tracking, and preserves the current field
 of view. The panel reports Morning or Evening, the conjunction-day bin, and
-the observer-local date and time. Navigation is available only for observers
-on Earth. Closing the panel disables its saved configuration checkbox. These
-are calculated Moon best-time events; visiting an event does not assert that
-the Moon has already reached a visible-crescent threshold.
+the observer-local date and time, and whether the instant is a Best time,
+Sunrise, or Sunset. A successful jump also enables and saves Stellarium's
+standard selected-object marker and Solar System planet pointers, so the
+four-part rotating marker appears around the selected Moon. Navigation is
+available only for observers on Earth. Closing the panel disables its saved
+configuration checkbox. These are calculated Moon events; visiting one does
+not assert that the Moon has already reached a visible-crescent threshold.
 
 ## Calculation references
 
@@ -159,7 +180,9 @@ Release downloads and compatibility notes are available on the
 
 VisibilityContours is a standalone dynamic plugin. It requires the source and a
 configured build tree for the exact Stellarium 26.2 / Qt 6 installation with
-which it will be used, but it does not modify or rebuild Stellarium.
+which it will be used, plus Qt 6 LinguistTools to compile the embedded Arabic
+catalog. It does not modify or rebuild Stellarium, and the installed plugin
+remains a single shared library.
 
 Configure and build it out of tree:
 

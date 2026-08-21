@@ -12,10 +12,31 @@ namespace VisibilityMath
 constexpr double YALLOP_ODEH_OFFSET_DEG = 4.672;
 constexpr double CONVENTIONAL_SUN_CENTER_ALTITUDE_DEG = -0.8333;
 
+bool useArabicForProgramLanguage(const std::string& languageCode);
+
 enum class CrescentEventKind
 {
     Morning,
     Evening
+};
+
+enum class NavigationMode
+{
+    MoonUpOnly,
+    MoonUpOrDown
+};
+
+enum class EventTimeBasis
+{
+    BestTime,
+    Sunrise,
+    Sunset
+};
+
+struct NavigationTime
+{
+    double jd;
+    EventTimeBasis basis;
 };
 
 struct CrescentEvent
@@ -24,6 +45,8 @@ struct CrescentEvent
     double conjunctionJde;
     int dayIndex;
     CrescentEventKind kind;
+    NavigationMode mode = NavigationMode::MoonUpOnly;
+    EventTimeBasis basis = EventTimeBasis::BestTime;
 };
 
 double odehPolynomial(double widthArcmin);
@@ -43,8 +66,13 @@ std::optional<double> nearestTime(double currentJd,
                                   const std::optional<double>& evening,
                                   const std::optional<double>& morning);
 int conjunctionDayIndex(double eventJde, double conjunctionJde);
+bool eventInConjunctionWindow(double eventJde, double conjunctionJde);
+bool moonIsUp(double moonAltitudeDeg);
 bool validCrescentEvent(double eventJd, double eventJde, double conjunctionJde,
                         double moonAltitudeDeg);
+std::optional<NavigationTime> chooseNavigationTime(
+    NavigationMode mode, CrescentEventKind kind, double solarEventJd,
+    const std::optional<double>& bestTimeJd, double bestTimeMoonAltitudeDeg);
 void sortCrescentEvents(std::vector<CrescentEvent>& events);
 std::optional<CrescentEvent> adjacentCrescentEvent(
     const std::vector<CrescentEvent>& events, double currentJd,
