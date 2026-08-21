@@ -57,7 +57,7 @@ jobs:
           test -x "${qt_root}/bin/qtpaths"
           qt_core="${qt_root}/lib/QtCore.framework/Versions/A/QtCore"
           test -f "${qt_core}"
-          lipo -verify_arch x86_64 arm64 "${qt_core}"
+          lipo "${qt_core}" -verify_arch x86_64 arm64
           file "${qt_core}"
           lipo -archs "${qt_core}"
 
@@ -109,7 +109,7 @@ jobs:
             echo "Architectures: $(lipo -archs "${host_executable}")"
           } | tee "${report}"
 
-          lipo -verify_arch x86_64 arm64 "${host_executable}"
+          lipo "${host_executable}" -verify_arch x86_64 arm64
           codesign --display --verbose=4 "${STELLARIUM_APP}" >"${signature}" 2>&1
           codesign --display --entitlements :- "${STELLARIUM_APP}" >"${entitlements}" 2>>"${signature}" || true
           codesign --verify --deep --strict --verbose=2 "${STELLARIUM_APP}" 2>&1 | tee -a "${report}"
@@ -206,7 +206,7 @@ jobs:
           set -euo pipefail
           plugin="${PWD}/package-root/modules/VisibilityContours/libVisibilityContours.dylib"
           test -f "${plugin}"
-          lipo -verify_arch x86_64 arm64 "${plugin}"
+          lipo "${plugin}" -verify_arch x86_64 arm64
 
           mkdir -p diagnostics/symbols
           report="diagnostics/macos-plugin-report.txt"
