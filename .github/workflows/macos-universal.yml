@@ -272,7 +272,7 @@ jobs:
             nm -arch "${arch}" -j -u "${plugin}" | \
               LC_ALL=C sort -u > "${unresolved}"
             grep -E 'Stel|SolarSystem|Planet|TitleBar' "${unresolved}" > "${required}" || true
-            comm -23 "${required}" "${host_exports}" > "${missing}"
+            LC_ALL=C comm -23 "${required}" "${host_exports}" > "${missing}"
 
             {
               echo
