@@ -45,8 +45,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --disable-pip-version-check "aqtinstall==3.3.0"
-          python3 -m aqt install-qt mac desktop "${QT_VERSION}" clang_64 \
+          python3 -m venv "${RUNNER_TEMP}/aqt-venv"
+          "${RUNNER_TEMP}/aqt-venv/bin/python" -m pip install \
+            --disable-pip-version-check "aqtinstall==3.3.0"
+          "${RUNNER_TEMP}/aqt-venv/bin/python" -m aqt install-qt \
+            mac desktop "${QT_VERSION}" clang_64 \
             --outputdir "${RUNNER_TEMP}/Qt" \
             --modules qtcharts qtpositioning qtsvg qttools
 
@@ -330,8 +333,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if test -z "${{ steps.host.outputs.load_permitted }}"; then
+            echo "Host inspection did not complete; see the first failed workflow step."
+            exit 1
+          fi
           if test "${{ steps.host.outputs.load_permitted }}" != "true"; then
             echo "The official host signature does not currently permit the planned third-party plugin load."
+            exit 1
+          fi
+          if test -z "${{ steps.plugin.outputs.compatible }}"; then
+            echo "Plugin build or inspection did not complete; see the first failed workflow step."
             exit 1
           fi
           if test "${{ steps.plugin.outputs.compatible }}" != "true"; then
