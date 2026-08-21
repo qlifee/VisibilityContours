@@ -269,7 +269,7 @@ jobs:
             done < diagnostics/symbols/host-files.bin
             LC_ALL=C sort -u -o "${host_exports}" "${host_exports}"
 
-            nm -arch "${arch}" -u "${plugin}" | awk '$1 == "U" { print $2 }' | \
+            nm -arch "${arch}" -j -u "${plugin}" | \
               LC_ALL=C sort -u > "${unresolved}"
             grep -E 'Stel|SolarSystem|Planet|TitleBar' "${unresolved}" > "${required}" || true
             comm -23 "${required}" "${host_exports}" > "${missing}"
