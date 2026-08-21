@@ -134,8 +134,8 @@ jobs:
 
           disables_library_validation=false
           if test -s "${entitlements}" && \
-             plutil -extract com.apple.security.cs.disable-library-validation raw \
-               -o - "${entitlements}" 2>/dev/null | grep -qx 'true'; then
+             plutil -p "${entitlements}" 2>/dev/null | \
+               grep -Eq '"com\.apple\.security\.cs\.disable-library-validation" => true'; then
             disables_library_validation=true
           fi
 
