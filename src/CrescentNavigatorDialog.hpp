@@ -27,7 +27,8 @@ public:
     void setEventStatus(VisibilityMath::CrescentEventKind kind,
                         int dayIndex, const QString& localDate,
                         const QString& localTime,
-                        VisibilityMath::EventTimeBasis basis);
+                        VisibilityMath::EventTimeBasis basis,
+                        int hijriYear, int hijriMonth);
     void setNavigationEnabled(bool enabled);
 
 public slots:
@@ -39,6 +40,9 @@ protected:
 
 private:
     void applyStatus();
+    void updateEventFilterDirection();
+    void updateEventFilterControls(const QString& value);
+    QString hijriMonthName(int month) const;
 
     VisibilityContours* module;
     Ui_CrescentNavigatorDialog* ui;
@@ -49,6 +53,8 @@ private:
     int pendingDayIndex;
     QString pendingLocalDate;
     QString pendingLocalTime;
+    int pendingHijriYear;
+    int pendingHijriMonth;
     bool pendingEnabled;
 };
 

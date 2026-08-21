@@ -1,9 +1,10 @@
 #include "VisibilityMath.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
-#include <limits>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 
 namespace VisibilityMath
@@ -13,6 +14,48 @@ namespace
 constexpr double PI = 3.141592653589793238462643383279502884;
 constexpr double DEG2RAD = PI / 180.0;
 constexpr double RAD2DEG = 180.0 / PI;
+constexpr double GREGORIAN_EPOCH = 1721425.5;
+constexpr double ISLAMIC_EPOCH = 1948439.5;
+
+bool isGregorianLeapYear(int year)
+{
+    return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+}
+
+bool isValidGregorianDate(int year, int month, int day)
+{
+    if (month < 1 || month > 12 || day < 1)
+        return false;
+    constexpr int monthLengths[12] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+    };
+    const int maximumDay = monthLengths[month - 1]
+                           + (month == 2 && isGregorianLeapYear(year) ? 1 : 0);
+    return day <= maximumDay;
+}
+
+double gregorianToJd(int year, int month, int day)
+{
+    int leapAdjustment = 0;
+    if (month > 2)
+        leapAdjustment = isGregorianLeapYear(year) ? -1 : -2;
+    const double previousYear = static_cast<double>(year) - 1.0;
+    return GREGORIAN_EPOCH - 1.0
+           + 365.0 * previousYear
+           + std::floor(previousYear / 4.0)
+           - std::floor(previousYear / 100.0)
+           + std::floor(previousYear / 400.0)
+           + std::floor((((367.0 * month) - 362.0) / 12.0)
+                        + leapAdjustment + day);
+}
+
+double islamicToJd(int year, int month, int day)
+{
+    return day + std::ceil(29.5 * (month - 1))
+           + (static_cast<double>(year) - 1.0) * 354.0
+           + std::floor((3.0 + 11.0 * year) / 30.0)
+           + ISLAMIC_EPOCH - 1.0;
+}
 }
 
 bool useArabicForProgramLanguage(const std::string& languageCode)
@@ -20,6 +63,87 @@ bool useArabicForProgramLanguage(const std::string& languageCode)
     return languageCode.size() >= 2
            && (languageCode[0] == 'a' || languageCode[0] == 'A')
            && (languageCode[1] == 'r' || languageCode[1] == 'R');
+}
+
+EventFilter eventFilterFromString(const std::string& value)
+{
+    std::string normalized = value;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char character)
+                   {
+                       return static_cast<char>(std::tolower(character));
+                   });
+    if (normalized == "morning")
+        return EventFilter::Morning;
+    if (normalized == "evening")
+        return EventFilter::Evening;
+    return EventFilter::Both;
+}
+
+const char* eventFilterKey(EventFilter filter)
+{
+    switch (filter)
+    {
+    case EventFilter::Morning:
+        return "morning";
+    case EventFilter::Evening:
+        return "evening";
+    case EventFilter::Both:
+    default:
+        return "both";
+    }
+}
+
+const char* eventFilterName(EventFilter filter)
+{
+    switch (filter)
+    {
+    case EventFilter::Morning:
+        return "Morning";
+    case EventFilter::Evening:
+        return "Evening";
+    case EventFilter::Both:
+    default:
+        return "Both";
+    }
+}
+
+bool eventMatchesFilter(CrescentEventKind kind, EventFilter filter)
+{
+    return filter == EventFilter::Both
+           || (filter == EventFilter::Morning
+               && kind == CrescentEventKind::Morning)
+           || (filter == EventFilter::Evening
+               && kind == CrescentEventKind::Evening);
+}
+
+std::optional<HijriMonthYear> hijriMonthYearForEvent(
+    int gregorianYear, int gregorianMonth, int gregorianDay,
+    CrescentEventKind kind)
+{
+    if (!isValidGregorianDate(gregorianYear, gregorianMonth, gregorianDay))
+        return std::nullopt;
+
+    const double eventDateJd = gregorianToJd(
+        gregorianYear, gregorianMonth, gregorianDay);
+    const double shiftedJd = eventDateJd
+                             + (kind == CrescentEventKind::Morning ? -10.0 : 10.0);
+    const double normalizedJd = std::floor(shiftedJd) + 0.5;
+    const double yearValue = std::floor(
+        ((30.0 * (normalizedJd - ISLAMIC_EPOCH)) + 10646.0) / 10631.0);
+    if (!std::isfinite(yearValue)
+        || yearValue < std::numeric_limits<int>::min()
+        || yearValue > std::numeric_limits<int>::max())
+        return std::nullopt;
+
+    const int year = static_cast<int>(yearValue);
+    const double monthValue = std::min(
+        12.0,
+        std::ceil((normalizedJd - (29.0 + islamicToJd(year, 1, 1))) / 29.5)
+            + 1.0);
+    if (!std::isfinite(monthValue) || monthValue < 1.0 || monthValue > 12.0)
+        return std::nullopt;
+    return HijriMonthYear{year, static_cast<int>(monthValue)};
 }
 
 double odehPolynomial(double widthArcmin)
@@ -191,7 +315,7 @@ void sortCrescentEvents(std::vector<CrescentEvent>& events)
 
 std::optional<CrescentEvent> adjacentCrescentEvent(
     const std::vector<CrescentEvent>& events, double currentJd,
-    int direction, double epsilonDays)
+    int direction, EventFilter filter, double epsilonDays)
 {
     if (!std::isfinite(currentJd) || !(epsilonDays >= 0.0) || direction == 0)
         return std::nullopt;
@@ -200,7 +324,8 @@ std::optional<CrescentEvent> adjacentCrescentEvent(
     {
         for (const CrescentEvent& event : events)
         {
-            if (event.jd > currentJd + epsilonDays)
+            if (eventMatchesFilter(event.kind, filter)
+                && event.jd > currentJd + epsilonDays)
                 return event;
         }
         return std::nullopt;
@@ -208,7 +333,8 @@ std::optional<CrescentEvent> adjacentCrescentEvent(
 
     for (auto it = events.rbegin(); it != events.rend(); ++it)
     {
-        if (it->jd < currentJd - epsilonDays)
+        if (eventMatchesFilter(it->kind, filter)
+            && it->jd < currentJd - epsilonDays)
             return *it;
     }
     return std::nullopt;

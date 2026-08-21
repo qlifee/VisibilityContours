@@ -542,6 +542,7 @@ VisibilityContours::VisibilityContours()
     , bandsFilled(true)
     , navigatorShown(false)
     , navigatorEarthAvailable(true)
+    , navigatorEventFilter(VisibilityMath::EventFilter::Both)
     , settings(nullptr)
     , configDialog(new VisibilityContoursDialog(this))
     , navigatorDialog(new CrescentNavigatorDialog(this))
@@ -591,6 +592,12 @@ bool VisibilityContours::navigatorVisible() const
     return navigatorShown;
 }
 
+QString VisibilityContours::eventFilter() const
+{
+    return QString::fromLatin1(
+        VisibilityMath::eventFilterName(navigatorEventFilter));
+}
+
 void VisibilityContours::setCriterion(const QString& value)
 {
     const QString normalized = value.compare(QStringLiteral("Yallop"), Qt::CaseInsensitive) == 0
@@ -622,6 +629,17 @@ void VisibilityContours::setNavigatorVisible(bool visible)
     emit navigatorVisibleChanged(visible);
 }
 
+void VisibilityContours::setEventFilter(const QString& value)
+{
+    const VisibilityMath::EventFilter normalized =
+        VisibilityMath::eventFilterFromString(value.toStdString());
+    if (navigatorEventFilter == normalized)
+        return;
+    navigatorEventFilter = normalized;
+    saveSettings();
+    emit eventFilterChanged(eventFilter());
+}
+
 void VisibilityContours::readSettings()
 {
     if (!settings)
@@ -634,6 +652,12 @@ void VisibilityContours::readSettings()
     settings->setValue(QStringLiteral("criterion"), selectedCriterion);
     bandsFilled = settings->value(QStringLiteral("fill_bands"), true).toBool();
     navigatorShown = settings->value(QStringLiteral("show_navigator"), false).toBool();
+    navigatorEventFilter = VisibilityMath::eventFilterFromString(
+        settings->value(QStringLiteral("event_filter"),
+                        QStringLiteral("both")).toString().toStdString());
+    settings->setValue(
+        QStringLiteral("event_filter"),
+        QString::fromLatin1(VisibilityMath::eventFilterKey(navigatorEventFilter)));
     settings->endGroup();
     settings->sync();
 }
@@ -646,6 +670,9 @@ void VisibilityContours::saveSettings() const
     settings->setValue(QStringLiteral("criterion"), selectedCriterion);
     settings->setValue(QStringLiteral("fill_bands"), bandsFilled);
     settings->setValue(QStringLiteral("show_navigator"), navigatorShown);
+    settings->setValue(
+        QStringLiteral("event_filter"),
+        QString::fromLatin1(VisibilityMath::eventFilterKey(navigatorEventFilter)));
     settings->endGroup();
     settings->sync();
 }
@@ -827,7 +854,8 @@ void VisibilityContours::navigateToCrescent(
         const auto events = crescentEventsForConjunction(core, sun, moon,
                                                           conjunctionJde, mode);
         destination = VisibilityMath::adjacentCrescentEvent(
-            events, currentJd, direction, NAVIGATION_EPSILON_DAYS);
+            events, currentJd, direction, navigatorEventFilter,
+            NAVIGATION_EPSILON_DAYS);
         if (destination)
             break;
 
@@ -882,13 +910,18 @@ void VisibilityContours::navigateToCrescent(
                                   .arg(year, 4, 10, QLatin1Char('0'))
                                   .arg(month, 2, 10, QLatin1Char('0'))
                                   .arg(day, 2, 10, QLatin1Char('0'));
+    const auto hijri = VisibilityMath::hijriMonthYearForEvent(
+        year, month, day, destination->kind);
     navigatorDialog->setEventStatus(destination->kind, destination->dayIndex,
-                                    localDate, localTime, destination->basis);
+                                    localDate, localTime, destination->basis,
+                                    hijri ? hijri->year : 0,
+                                    hijri ? hijri->month : 0);
     qInfo() << "VisibilityContours navigator selected"
             << (destination->kind == VisibilityMath::CrescentEventKind::Morning
                     ? "Morning" : "Evening")
             << "day" << destination->dayIndex
             << "basis" << static_cast<int>(destination->basis)
+            << "filter" << VisibilityMath::eventFilterKey(navigatorEventFilter)
             << "JD" << destination->jd;
 }
 

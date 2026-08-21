@@ -4,7 +4,7 @@ Standalone Stellarium plugin that draws selectable crescent-visibility bands
 around the Sun and adds observational visibility information when the Moon is
 selected.
 
-- Current version: **0.4.0**
+- Current version: **0.5.0**
 
 The Odeh scheme uses contiguous categories:
 
@@ -26,10 +26,11 @@ Open **Configuration window → Plugins → Visibility Contours → Configure** 
 select Odeh or Yallop contours, control translucent band fills, and show the
 floating Moon Navigator. Band fills are enabled for new profiles; an explicitly
 saved fill setting and the navigator setting persist across restarts. The
-criterion resets to Yallop each time the plugin starts. The main plugin page
-contains the calculation note and reference links. Select the Moon to see `V
-now`, the nearest valid morning/evening best time, and `V at best time` in
-Stellarium's normal object-information panel.
+Moon Navigator event filter also persists and defaults to Both when it has not
+been saved. The criterion resets to Yallop each time the plugin starts. The main
+plugin page contains the calculation note and reference links. Select the Moon
+to see `V now`, the nearest valid morning/evening best time, and `V at best
+time` in Stellarium's normal object-information panel.
 
 When Stellarium's program language is Arabic, plugin-owned dialogs, tooltips,
 status text, Moon information, conjunction labels, name, description, and
@@ -102,6 +103,14 @@ Enable **Show Moon navigator** in the plugin configuration to open a movable
 panel with two previous/next button rows. The configuration window is also
 movable, and both windows remember their positions.
 
+The global **Navigate: Both | Morning | Evening** radio selector applies to
+both button rows. **Both** retains chronological morning/evening traversal,
+while **Morning** or **Evening** skips every event of the other kind. Changing
+the selector does not move Stellarium immediately; the next arrow click begins
+from the current Stellarium time. The selection is saved as
+`event_filter=both|morning|evening`, with **Both** used for a missing or invalid
+setting.
+
 - **Only Moon up** visits valid `4/9`-lag best times for which the Moon is
   strictly above the airless geometric horizon.
 - **Moon up or down** prefers that same best time when it is valid and the Moon
@@ -125,6 +134,16 @@ four-part rotating marker appears around the selected Moon. Navigation is
 available only for observers on Earth. Closing the panel disables its saved
 configuration checkbox. These are calculated Moon events; visiting one does
 not assert that the Moon has already reached a visible-crescent threshold.
+
+After navigation, the panel also shows a compact Hijri month/year heading.
+Morning events use the event's observer-local Gregorian civil date minus ten
+days and display `End of Rabi' al-Awwal 1448 AH`; evening events use the local
+date plus ten days and display `Beginning of Rabi' al-Akhir 1448 AH`. In Arabic
+the corresponding formats are `آخر ربيع الأول 1448 هـ` and
+`غرة ربيع الآخر 1448 هـ`. The conversion reproduces the arithmetic
+`convertdate.islamic` calendar with epoch `1948439.5` and the same month names
+and ±10-day month-selection convention as `hcal-maps`. It is intentionally not
+an observational or local crescent calendar.
 
 ## Calculation references
 
