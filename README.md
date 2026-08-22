@@ -6,7 +6,7 @@ Standalone Stellarium plugin that draws selectable crescent-visibility bands
 around the Sun and adds observational visibility information when the Moon is
 selected.
 
-- Current version: **0.5.1**
+- Current version: **0.5.2**
 
 The Odeh scheme uses contiguous categories:
 
@@ -163,12 +163,18 @@ boundaries using the Moon's current horizontal parallax.
 
 Stellarium's public scripting API does not expose the arbitrary celestial-sphere polyline drawing needed for these contours. A compiled plugin can use `StelPainter` and the Alt/Az projector directly.
 
-## Install the prebuilt plugin
+## Install a prebuilt plugin
+
+Stellarium plugins are ABI-sensitive. Use a binary built for the same
+Stellarium release, Qt major/minor version, operating system, and processor
+architecture as the host application. A package for another Stellarium build,
+including a Qt5 or Homebrew build, may not load even on the same computer.
+
+### Linux
 
 The prebuilt Linux plugin has been tested with Stellarium 26.2 on Fedora 44
-x86_64 using Qt 6.11.1. Stellarium plugins are ABI-sensitive; if Stellarium
-cannot load this binary, use the source-build instructions below against your
-exact Stellarium installation.
+x86_64 using Qt 6.11.1. If Stellarium cannot load this binary, use the
+source-build instructions below against your exact Stellarium installation.
 
 Install the latest release for your user account:
 
@@ -198,6 +204,51 @@ rmdir "$HOME/.stellarium/modules/VisibilityContours"
 
 Release downloads and compatibility notes are available on the
 [GitHub Releases page](https://github.com/qlifee/VisibilityContours/releases).
+
+### macOS 12+ — official Stellarium 26.2 Qt6 package
+
+The macOS v0.5.2 workflow targets only the unmodified official universal
+`Stellarium-26.2-qt6-macOS.zip` application from stellarium.org. Its matching
+build inputs are Qt 6.9.3, Xcode 26.5 with Apple Clang 21, a macOS 12.0
+deployment target, and both `arm64` and `x86_64` slices. Qt5, Homebrew, and
+other third-party Stellarium packages are not supported by this binary.
+
+The workflow verifies both architecture slices, deployment target, Qt plugin
+metadata, `@rpath` dependencies, unresolved Stellarium symbols, the official
+host's exported symbols, and its code-signing entitlements. The v0.5.2
+universal asset is Developer ID signed, notarized by Apple, and passed a clean
+browser-download Gatekeeper and runtime test with the official application on
+Apple Silicon. The `arm64` slice is runtime tested. The `x86_64` slice is
+universal-binary and CI inspected, but has not been runtime tested on an Intel
+Mac.
+
+GitHub Actions also produces ad-hoc-signed acceptance artifacts for
+maintainers. Those test artifacts are not normal end-user downloads; install
+the signed and notarized asset from the Releases page.
+
+Install v0.5.2 for the current user with:
+
+```bash
+download_dir="$HOME/Downloads/VisibilityContours-0.5.2-macOS"
+mkdir -p "$download_dir"
+curl -fL \
+  https://github.com/qlifee/VisibilityContours/releases/download/v0.5.2/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip \
+  -o "$download_dir/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip"
+ditto -x -k \
+  "$download_dir/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip" \
+  "$download_dir/unpacked"
+mkdir -p "$HOME/Library/Application Support/Stellarium/modules/VisibilityContours"
+install -m 755 \
+  "$download_dir/unpacked/VisibilityContours/libVisibilityContours.dylib" \
+  "$HOME/Library/Application Support/Stellarium/modules/VisibilityContours/libVisibilityContours.dylib"
+```
+
+Restart Stellarium after installation. To remove the macOS plugin:
+
+```bash
+rm "$HOME/Library/Application Support/Stellarium/modules/VisibilityContours/libVisibilityContours.dylib"
+rmdir "$HOME/Library/Application Support/Stellarium/modules/VisibilityContours"
+```
 
 ## Build from source
 
@@ -229,6 +280,17 @@ On Linux the installed plugin is
 Stellarium resolves the plugin's Stellarium API symbols when it loads the
 module. The plugin must therefore be rebuilt for ABI-incompatible Stellarium,
 Qt, or compiler versions.
+
+For a universal macOS build, use a universal Qt 6.9.3 SDK and add:
+
+```bash
+-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+```
+
+The staged macOS library is
+`modules/VisibilityContours/libVisibilityContours.dylib`. Building from source
+does not by itself provide Developer ID signing or Apple notarization.
 
 ## Easy constants to change
 

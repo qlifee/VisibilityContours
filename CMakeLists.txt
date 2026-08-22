@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(VisibilityContours VERSION 0.5.1 LANGUAGES CXX)
+project(VisibilityContours VERSION 0.5.2 LANGUAGES CXX)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
