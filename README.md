@@ -225,6 +225,12 @@ stable macOS download will not be published until it is Developer ID signed,
 notarized by Apple, and passes a clean browser-download Gatekeeper test. Do not
 treat the workflow artifact as a normal end-user release.
 
+Maintainers can manually request a separate Developer ID signed and notarized
+test artifact through the protected `macos-release` GitHub environment. This
+artifact remains an acceptance-test build until its clean browser download has
+passed Gatekeeper on the supported Apple Silicon system; the workflow does not
+publish or alter a GitHub Release.
+
 After the signed and notarized asset appears on the Releases page, install it
 for the current user with:
 
