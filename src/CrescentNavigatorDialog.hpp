@@ -29,9 +29,10 @@ public:
     void setStatusMessage(StatusMessage message);
     void setEventStatus(VisibilityMath::CrescentEventKind kind,
                         int dayIndex, const QString& localDate,
-                        const QString& localTime,
+                        const QString& localTime, bool gregorianCalendar,
                         VisibilityMath::EventTimeBasis basis,
                         int hijriYear, int hijriMonth);
+    void setObservationalHijriDate(const QString& date);
     void setNavigationEnabled(bool enabled);
 
 public slots:
@@ -46,6 +47,7 @@ private:
     void applyStatus();
     void configureButtonTooltips();
     void showButtonTooltip(QPushButton* button, const QPoint& buttonPosition);
+    void updateHijriHeadingFont();
     void updateEventFilterDirection();
     void updateEventFilterControls(const QString& value);
     QString hijriMonthName(int month) const;
@@ -60,6 +62,9 @@ private:
     int pendingDayIndex;
     QString pendingLocalDate;
     QString pendingLocalTime;
+    bool pendingGregorianCalendar;
+    QString pendingObservationalHijriDate;
+    bool pendingObservationalHijriResolved;
     int pendingHijriYear;
     int pendingHijriMonth;
     bool pendingEnabled;

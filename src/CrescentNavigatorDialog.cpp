@@ -9,6 +9,7 @@
 #include "ui_CrescentNavigatorDialog.h"
 
 #include <QBoxLayout>
+#include <QApplication>
 #include <QColor>
 #include <QEnterEvent>
 #include <QEvent>
@@ -30,6 +31,8 @@ CrescentNavigatorDialog::CrescentNavigatorDialog(VisibilityContours* contours)
     , pendingEventKind(VisibilityMath::CrescentEventKind::Morning)
     , pendingEventBasis(VisibilityMath::EventTimeBasis::BestTime)
     , pendingDayIndex(0)
+    , pendingGregorianCalendar(true)
+    , pendingObservationalHijriResolved(false)
     , pendingHijriYear(0)
     , pendingHijriMonth(0)
     , pendingEnabled(true)
@@ -49,6 +52,8 @@ CrescentNavigatorDialog::~CrescentNavigatorDialog()
 void CrescentNavigatorDialog::createDialogContent()
 {
     ui->setupUi(dialog);
+    dialog->installEventFilter(this);
+    updateHijriHeadingFont();
     hoverTooltip = new QLabel(dialog);
     hoverTooltip->setObjectName(QStringLiteral("visibilityContoursHoverTooltip"));
     hoverTooltip->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -116,6 +121,13 @@ void CrescentNavigatorDialog::createDialogContent()
 
 bool CrescentNavigatorDialog::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == dialog
+        && (event->type() == QEvent::ApplicationFontChange
+            || event->type() == QEvent::FontChange))
+    {
+        updateHijriHeadingFont();
+        dialog->adjustSize();
+    }
     auto* button = qobject_cast<QPushButton*>(watched);
     if (button && event->type() == QEvent::Enter)
     {
@@ -218,12 +230,14 @@ void CrescentNavigatorDialog::setStatusMessage(StatusMessage message)
 {
     pendingMessage = message;
     pendingIsEvent = false;
+    pendingObservationalHijriResolved = false;
     applyStatus();
 }
 
 void CrescentNavigatorDialog::setEventStatus(
     VisibilityMath::CrescentEventKind kind, int dayIndex,
     const QString& localDate, const QString& localTime,
+    bool gregorianCalendar,
     VisibilityMath::EventTimeBasis basis, int hijriYear, int hijriMonth)
 {
     pendingIsEvent = true;
@@ -232,8 +246,23 @@ void CrescentNavigatorDialog::setEventStatus(
     pendingDayIndex = dayIndex;
     pendingLocalDate = localDate;
     pendingLocalTime = localTime;
+    pendingGregorianCalendar = gregorianCalendar;
+    pendingObservationalHijriDate.clear();
+    pendingObservationalHijriResolved = false;
     pendingHijriYear = hijriYear;
     pendingHijriMonth = hijriMonth;
+    applyStatus();
+}
+
+void CrescentNavigatorDialog::setObservationalHijriDate(const QString& date)
+{
+    if (!pendingIsEvent)
+        return;
+    if (pendingObservationalHijriResolved
+        && pendingObservationalHijriDate == date)
+        return;
+    pendingObservationalHijriDate = date;
+    pendingObservationalHijriResolved = true;
     applyStatus();
 }
 
@@ -254,10 +283,25 @@ void CrescentNavigatorDialog::retranslate()
     if (dialog)
     {
         ui->retranslateUi(dialog);
+        updateHijriHeadingFont();
         configureButtonTooltips();
         updateEventFilterDirection();
         applyStatus();
     }
+}
+
+void CrescentNavigatorDialog::updateHijriHeadingFont()
+{
+    if (!dialog)
+        return;
+    QFont headingFont = QApplication::font();
+    if (headingFont.pointSizeF() > 0.0)
+        headingFont.setPointSizeF(headingFont.pointSizeF() * 1.5);
+    else if (headingFont.pixelSize() > 0)
+        headingFont.setPixelSize(
+            qMax(1, qRound(headingFont.pixelSize() * 1.5)));
+    headingFont.setBold(true);
+    ui->hijriLabel->setFont(headingFont);
 }
 
 void CrescentNavigatorDialog::updateEventFilterDirection()
@@ -344,8 +388,35 @@ void CrescentNavigatorDialog::applyStatus()
                                     : QString::number(pendingDayIndex);
         ui->statusLabel->setText(
             tr("%1 · day %2 · %3").arg(kind, dayText, basis));
-        ui->timeLabel->setText(
-            QStringLiteral("%1 · %2").arg(pendingLocalDate, pendingLocalTime));
+        const QString language =
+            StelApp::getInstance().getLocaleMgr().getAppLanguage();
+        const bool useRightToLeft =
+            VisibilityMath::useArabicForProgramLanguage(
+                language.toStdString());
+        const QString direction = useRightToLeft
+                                      ? QStringLiteral("rtl")
+                                      : QStringLiteral("ltr");
+        const QString civilLabel = pendingGregorianCalendar
+                                       ? tr("Gregorian date:")
+                                       : tr("Julian date:");
+        QString dateLines =
+            QStringLiteral("<div dir=\"%1\"><b>%2 "
+                           "<span dir=\"ltr\">%3 %4</span></b></div>")
+                .arg(direction, civilLabel.toHtmlEscaped(),
+                     pendingLocalDate.toHtmlEscaped(),
+                     pendingLocalTime.toHtmlEscaped());
+        if (pendingObservationalHijriResolved)
+        {
+            const QString hijriDate = pendingObservationalHijriDate.isEmpty()
+                                          ? tr("Not available")
+                                          : pendingObservationalHijriDate;
+            dateLines +=
+                QStringLiteral("<div dir=\"%1\"><b>%2 "
+                               "<span dir=\"ltr\">%3</span></b></div>")
+                    .arg(direction, tr("Hijri date:").toHtmlEscaped(),
+                         hijriDate.toHtmlEscaped());
+        }
+        ui->timeLabel->setText(dateLines);
         const QString monthName = hijriMonthName(pendingHijriMonth);
         const bool validHijri = !monthName.isEmpty() && pendingHijriYear != 0;
         ui->hijriLabel->setVisible(validHijri);

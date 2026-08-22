@@ -6,7 +6,7 @@ Standalone Stellarium plugin that draws selectable crescent-visibility bands
 around the Sun and adds observational visibility information when the Moon is
 selected.
 
-- Current version: **0.5.2**
+- Current version: **0.6.0**
 
 The Odeh scheme uses contiguous categories:
 
@@ -36,8 +36,9 @@ saved fill setting and the navigator setting persist across restarts. The
 Moon Navigator event filter also persists and defaults to Both when it has not
 been saved. The criterion resets to Yallop each time the plugin starts. The main
 plugin page contains the calculation note and reference links. Select the Moon
-to see `V now`, the nearest valid morning/evening best time, and `V at best
-time` in Stellarium's normal object-information panel.
+to see `V now`, the nearest valid morning/evening best time, `V at best time`,
+and the observational `Hijri date` in Stellarium's normal object-information
+panel.
 
 When Stellarium's program language is Arabic, plugin-owned dialogs, tooltips,
 status text, Moon information, conjunction labels, name, description, and
@@ -86,18 +87,39 @@ displayed to two decimal places.
 ## Best time and observational V
 
 The information-panel V uses geometric topocentric Sun/Moon altitudes and the
-actual illuminated crescent width derived from Stellarium's illuminated
-fraction and apparent lunar diameter. Atmospheric refraction is not used.
+actual illuminated crescent width derived from the Sun-Moon-observer geometry
+and topocentric apparent lunar diameter. Atmospheric refraction is not used.
 
 Evening best time is sunset plus `4/9` of the positive Moon-set lag. Morning
 best time is sunrise minus `4/9` of the positive Moon-rise lag. The plugin
 calculates both valid candidates and displays the one nearest the current
 Stellarium clock, in the observer's local civil time.
 The information panel shows time only, formatted like `17h55m15s`.
+Its seconds follow the same containing-second convention as Stellarium's
+bottom clock. `V now` and `V at best time` use the same airless geometric
+topocentric calculation, so they agree when evaluated at the same instant.
 
 If the selected Moon is at or below the airless geometric horizon, or the
 current time is outside conjunction-day bins `-3` through `+3`, all three
 plugin rows display `-` instead of observational values or a best time.
+
+The Hijri-date row remains available whenever the Moon is selected from an
+Earth location, including while those three observational rows display `-`.
+It advances at local sunset and follows two visibility tracks: a calculated
+track using `V ≥ 1.35` and an observed track using `V ≥ 5.83`. When both tracks
+agree it displays one date, for example `Hijri date: 01/04/1448`. When they
+differ it displays the calculated date first, for example
+`Hijri date: 01/04/1448 - 30/03/1448`. A month begins only from a valid evening
+best-time event. For each track, the plugin examines the preceding 35 days and
+finds the immediately preceding geocentric conjunction. It checks valid
+post-conjunction evenings chronologically in bins `0` through `+3`, retaining
+the first eligible crossing of each threshold independently. A crossing can
+start a month only when that track is on day 28, 29, or 30. Later qualifying
+evenings in the same lunation do not restart day 1. A track that has not begun
+a new month by day 30 advances at the next conventional sunset. The calculated
+lunation events are cached for responsive Moon navigation. If the required
+visibility history or sunset events cannot be constructed, the row displays
+`Hijri date: Not available`.
 
 Sunrise and sunset use a geometric Sun-center altitude of `-0.8333°`, the
 conventional upper-limb sunrise/sunset threshold. Moonrise, Moonset, and the
@@ -123,6 +145,8 @@ setting.
   strictly above the airless geometric horizon.
 - **Moon up or down** prefers that same best time when it is valid and the Moon
   is up; otherwise it visits the corresponding conventional sunrise or sunset.
+  An evening sunset fallback lands five seconds after the calculated sunset so
+  the sunset-based Hijri date has already advanced.
 
 Forward selects the first qualifying event strictly after the current
 Stellarium time; Back selects the first strictly before it. Candidates are
@@ -135,19 +159,26 @@ If no qualifying event remains in the current conjunction window, navigation
 continues into the adjacent lunation. At a selected event Stellarium pauses,
 selects and centers the Moon, enables tracking, and preserves the current field
 of view. The panel reports Morning or Evening, the conjunction-day bin, and
-the observer-local date and time, and whether the instant is a Best time,
-Sunrise, or Sunset. A successful jump also enables and saves Stellarium's
+the observer-local Gregorian date and time, with the observational Hijri date
+on a separate line beneath it. Both lines are bold. The panel also reports
+whether the instant is a Best time, Sunrise, or Sunset. A successful jump
+enables and saves Stellarium's
 standard selected-object marker and Solar System planet pointers, so the
 four-part rotating marker appears around the selected Moon. Navigation is
 available only for observers on Earth. Closing the panel disables its saved
 configuration checkbox. These are calculated Moon events; visiting one does
 not assert that the Moon has already reached a visible-crescent threshold.
 
-After navigation, the panel also shows a compact Hijri month/year heading for
-the selected event. Morning events use the format
+After navigation, the panel also shows a bold Hijri month/year heading at 150%
+of the application font size. Morning events use the format
 `End of Rabi' al-Awwal 1448 AH`, while evening events use
 `Beginning of Rabi' al-Akhir 1448 AH`. In Arabic, the corresponding formats are
 `آخر ربيع الأول 1448 هـ` and `غرة ربيع الآخر 1448 هـ`.
+
+The two bold date lines are explicitly labelled `Gregorian date:` or `Julian
+date:` according to Stellarium's historical calendar switch at 1582-10-15,
+and `Hijri date:`. Arabic uses right-to-left labelled lines while preserving
+the numeric dates and times in left-to-right order.
 
 ## Calculation references
 
@@ -207,7 +238,7 @@ Release downloads and compatibility notes are available on the
 
 ### macOS 12+ — official Stellarium 26.2 Qt6 package
 
-The macOS v0.5.2 workflow targets only the unmodified official universal
+The macOS v0.6.0 workflow targets only the unmodified official universal
 `Stellarium-26.2-qt6-macOS.zip` application from stellarium.org. Its matching
 build inputs are Qt 6.9.3, Xcode 26.5 with Apple Clang 21, a macOS 12.0
 deployment target, and both `arm64` and `x86_64` slices. Qt5, Homebrew, and
@@ -215,27 +246,26 @@ other third-party Stellarium packages are not supported by this binary.
 
 The workflow verifies both architecture slices, deployment target, Qt plugin
 metadata, `@rpath` dependencies, unresolved Stellarium symbols, the official
-host's exported symbols, and its code-signing entitlements. The v0.5.2
-universal asset is Developer ID signed, notarized by Apple, and passed a clean
-browser-download Gatekeeper and runtime test with the official application on
-Apple Silicon. The `arm64` slice is runtime tested. The `x86_64` slice is
-universal-binary and CI inspected, but has not been runtime tested on an Intel
-Mac.
+host's exported symbols, and its code-signing entitlements. The v0.6.0
+universal asset is CI built and inspected, Developer ID signed, and notarized
+by Apple. This version has not been runtime tested on macOS; both the `arm64`
+and `x86_64` slices are universal-binary and CI inspected only. Linux is the
+runtime-tested platform for v0.6.0.
 
 GitHub Actions also produces ad-hoc-signed acceptance artifacts for
 maintainers. Those test artifacts are not normal end-user downloads; install
 the signed and notarized asset from the Releases page.
 
-Install v0.5.2 for the current user with:
+Install v0.6.0 for the current user with:
 
 ```bash
-download_dir="$HOME/Downloads/VisibilityContours-0.5.2-macOS"
+download_dir="$HOME/Downloads/VisibilityContours-0.6.0-macOS"
 mkdir -p "$download_dir"
 curl -fL \
-  https://github.com/qlifee/VisibilityContours/releases/download/v0.5.2/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip \
-  -o "$download_dir/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip"
+  https://github.com/qlifee/VisibilityContours/releases/download/v0.6.0/VisibilityContours-0.6.0-Stellarium-26.2-macOS-universal.zip \
+  -o "$download_dir/VisibilityContours-0.6.0-Stellarium-26.2-macOS-universal.zip"
 ditto -x -k \
-  "$download_dir/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip" \
+  "$download_dir/VisibilityContours-0.6.0-Stellarium-26.2-macOS-universal.zip" \
   "$download_dir/unpacked"
 mkdir -p "$HOME/Library/Application Support/Stellarium/modules/VisibilityContours"
 install -m 755 \
