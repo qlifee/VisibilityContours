@@ -215,24 +215,18 @@ other third-party Stellarium packages are not supported by this binary.
 
 The workflow verifies both architecture slices, deployment target, Qt plugin
 metadata, `@rpath` dependencies, unresolved Stellarium symbols, the official
-host's exported symbols, and its code-signing entitlements. Apple Silicon must
-also pass a real runtime test with the official application before the asset is
-published. The Intel slice is universal-binary and CI inspected, but is not
-runtime tested unless an Intel Mac tester is available.
+host's exported symbols, and its code-signing entitlements. The v0.5.2
+universal asset is Developer ID signed, notarized by Apple, and passed a clean
+browser-download Gatekeeper and runtime test with the official application on
+Apple Silicon. The `arm64` slice is runtime tested. The `x86_64` slice is
+universal-binary and CI inspected, but has not been runtime tested on an Intel
+Mac.
 
-The ad-hoc-signed GitHub Actions artifact is for acceptance testing only. A
-stable macOS download will not be published until it is Developer ID signed,
-notarized by Apple, and passes a clean browser-download Gatekeeper test. Do not
-treat the workflow artifact as a normal end-user release.
+GitHub Actions also produces ad-hoc-signed acceptance artifacts for
+maintainers. Those test artifacts are not normal end-user downloads; install
+the signed and notarized asset from the Releases page.
 
-Maintainers can manually request a separate Developer ID signed and notarized
-test artifact through the protected `macos-release` GitHub environment. This
-artifact remains an acceptance-test build until its clean browser download has
-passed Gatekeeper on the supported Apple Silicon system; the workflow does not
-publish or alter a GitHub Release.
-
-After the signed and notarized asset appears on the Releases page, install it
-for the current user with:
+Install v0.5.2 for the current user with:
 
 ```bash
 download_dir="$HOME/Downloads/VisibilityContours-0.5.2-macOS"
