@@ -65,6 +65,13 @@ bool useArabicForProgramLanguage(const std::string& languageCode)
            && (languageCode[1] == 'r' || languageCode[1] == 'R');
 }
 
+bool isGregorianCalendarDate(int year, int month, int day)
+{
+    return year > 1582
+           || (year == 1582
+               && (month > 10 || (month == 10 && day >= 15)));
+}
+
 EventFilter eventFilterFromString(const std::string& value)
 {
     std::string normalized = value;
@@ -146,6 +153,281 @@ std::optional<HijriMonthYear> hijriMonthYearForEvent(
     return HijriMonthYear{year, static_cast<int>(monthValue)};
 }
 
+bool validHijriDate(const HijriDate& date)
+{
+    return date.year != 0
+           && date.month >= 1 && date.month <= 12
+           && date.day >= 1 && date.day <= 30;
+}
+
+bool sameHijriDate(const HijriDate& first, const HijriDate& second)
+{
+    return first.year == second.year
+           && first.month == second.month
+           && first.day == second.day;
+}
+
+HijriDate advanceHijriDateAtSunset(const HijriDate& current,
+                                   bool criterionMet)
+{
+    if (!validHijriDate(current))
+        return {0, 0, 0};
+
+    const bool criterionStart = criterionMet && current.day >= 28;
+    if (!criterionStart && current.day < 30)
+        return {current.year, current.month, current.day + 1};
+
+    int nextYear = current.year;
+    int nextMonth = current.month + 1;
+    if (nextMonth > 12)
+    {
+        nextMonth = 1;
+        nextYear += nextYear == -1 ? 2 : 1;
+    }
+    return {nextYear, nextMonth, 1};
+}
+
+ObservationalHijriDate advanceObservationalHijriAtSunset(
+    const ObservationalHijriDate& current,
+    const std::optional<double>& eveningBestTimeV)
+{
+    const bool finiteV = eveningBestTimeV
+                         && std::isfinite(*eveningBestTimeV);
+    const bool calculatedMet = finiteV
+                               && *eveningBestTimeV
+                                      >= HIJRI_CALCULATED_START_V;
+    const bool observedMet = finiteV
+                             && *eveningBestTimeV
+                                    >= HIJRI_OBSERVED_START_V;
+    return {
+        advanceHijriDateAtSunset(current.calculated, calculatedMet),
+        advanceHijriDateAtSunset(current.observed, observedMet)
+    };
+}
+
+bool hijriMonthStartEligible(int currentDay)
+{
+    return currentDay >= 28 && currentDay <= 30;
+}
+
+bool hijriForcedRolloverDue(long long monthStartLocalDay,
+                            long long targetLocalDay)
+{
+    return targetLocalDay >= monthStartLocalDay
+           && targetLocalDay - monthStartLocalDay >= 30;
+}
+
+std::optional<double> selectPrecedingConjunction(
+    double currentJde, double nearestConjunctionJde,
+    const std::optional<double>& previousConjunctionJde)
+{
+    if (!std::isfinite(currentJde))
+        return std::nullopt;
+    if (std::isfinite(nearestConjunctionJde)
+        && nearestConjunctionJde <= currentJde)
+        return nearestConjunctionJde;
+    if (previousConjunctionJde
+        && std::isfinite(*previousConjunctionJde)
+        && *previousConjunctionJde <= currentJde)
+        return *previousConjunctionJde;
+    return std::nullopt;
+}
+
+bool lunationCacheCoversJde(double currentJde,
+                            double conjunctionJde,
+                            double nextConjunctionJde)
+{
+    return std::isfinite(currentJde)
+           && std::isfinite(conjunctionJde)
+           && std::isfinite(nextConjunctionJde)
+           && nextConjunctionJde > conjunctionJde
+           && currentJde >= conjunctionJde
+           && currentJde < nextConjunctionJde;
+}
+
+namespace
+{
+struct HijriTrackState
+{
+    bool initialized = false;
+    long long monthStartLocalDay = 0;
+    int year = 0;
+    int month = 0;
+};
+
+void incrementHijriMonth(HijriTrackState& state)
+{
+    ++state.month;
+    if (state.month > 12)
+    {
+        state.month = 1;
+        state.year += state.year == -1 ? 2 : 1;
+    }
+}
+
+void forceHijriTrackThrough(HijriTrackState& state,
+                            long long targetLocalDay)
+{
+    while (state.initialized
+           && hijriForcedRolloverDue(state.monthStartLocalDay,
+                                     targetLocalDay))
+    {
+        state.monthStartLocalDay += 30;
+        incrementHijriMonth(state);
+    }
+}
+
+std::optional<HijriDate> hijriTrackFromLunationEvents(
+    const std::vector<HijriVisibilityEvent>& events,
+    double threshold, long long currentSunsetDay)
+{
+    HijriTrackState state;
+    std::size_t groupStart = 0;
+    while (groupStart < events.size())
+    {
+        std::size_t groupEnd = groupStart + 1;
+        while (groupEnd < events.size()
+               && std::abs(events[groupEnd].conjunctionJde
+                           - events[groupStart].conjunctionJde) < 1e-6)
+            ++groupEnd;
+
+        if (!state.initialized)
+        {
+            for (std::size_t index = groupStart; index < groupEnd; ++index)
+            {
+                const auto& event = events[index];
+                if (event.v < threshold)
+                    continue;
+                const auto month = hijriMonthYearForEvent(
+                    event.gregorianYear, event.gregorianMonth,
+                    event.gregorianDay, CrescentEventKind::Evening);
+                if (!month)
+                    continue;
+                state = {true, event.localDay, month->year, month->month};
+                break;
+            }
+            groupStart = groupEnd;
+            continue;
+        }
+
+        for (std::size_t index = groupStart; index < groupEnd; ++index)
+        {
+            const auto& event = events[index];
+            forceHijriTrackThrough(state, event.localDay);
+            const long long day = event.localDay
+                                  - state.monthStartLocalDay + 1;
+            if (event.v >= threshold
+                && hijriMonthStartEligible(static_cast<int>(day)))
+            {
+                state.monthStartLocalDay = event.localDay;
+                incrementHijriMonth(state);
+                break;
+            }
+        }
+        groupStart = groupEnd;
+    }
+
+    if (!state.initialized)
+        return std::nullopt;
+    forceHijriTrackThrough(state, currentSunsetDay);
+    const long long day = currentSunsetDay - state.monthStartLocalDay + 1;
+    if (day < 1 || day > 30)
+        return std::nullopt;
+    return HijriDate{state.year, state.month, static_cast<int>(day)};
+}
+}
+
+std::optional<ObservationalHijriDate> observationalHijriFromLunationEvents(
+    const std::vector<HijriVisibilityEvent>& inputEvents,
+    long long currentSunsetDay, double currentJd,
+    double historyStartJd)
+{
+    if (!std::isfinite(currentJd) || !std::isfinite(historyStartJd)
+        || historyStartJd > currentJd)
+        return std::nullopt;
+
+    std::vector<HijriVisibilityEvent> events;
+    events.reserve(inputEvents.size());
+    for (const auto& event : inputEvents)
+    {
+        if (event.localDay > currentSunsetDay
+            || !std::isfinite(event.conjunctionJde)
+            || !std::isfinite(event.sunsetJd)
+            || !std::isfinite(event.bestTimeJd)
+            || !std::isfinite(event.bestTimeJde)
+            || !std::isfinite(event.v)
+            || event.sunsetJd < historyStartJd
+            || event.sunsetJd > currentJd
+            || event.bestTimeJde <= event.conjunctionJde
+            || event.dayIndex < 0 || event.dayIndex > 3)
+            continue;
+        events.push_back(event);
+    }
+    std::sort(events.begin(), events.end(),
+              [](const auto& first, const auto& second)
+              {
+                  if (first.conjunctionJde != second.conjunctionJde)
+                      return first.conjunctionJde < second.conjunctionJde;
+                  if (first.sunsetJd != second.sunsetJd)
+                      return first.sunsetJd < second.sunsetJd;
+                  return first.v < second.v;
+              });
+    if (events.empty())
+        return std::nullopt;
+
+    const auto calculated = hijriTrackFromLunationEvents(
+        events, HIJRI_CALCULATED_START_V, currentSunsetDay);
+    const auto observed = hijriTrackFromLunationEvents(
+        events, HIJRI_OBSERVED_START_V, currentSunsetDay);
+    if (!calculated || !observed)
+        return std::nullopt;
+    return ObservationalHijriDate{*calculated, *observed};
+}
+
+namespace
+{
+std::string paddedInteger(int value, int width)
+{
+    std::ostringstream output;
+    output << std::setfill('0') << std::setw(width) << value;
+    return output.str();
+}
+
+std::string formattedHijriYear(int year)
+{
+    if (year >= 0)
+        return paddedInteger(year, 4);
+    return "-" + paddedInteger(-year, 4);
+}
+}
+
+std::string formatHijriDate(const HijriDate& date)
+{
+    if (!validHijriDate(date))
+        return {};
+    return paddedInteger(date.day, 2) + "/"
+           + paddedInteger(date.month, 2) + "/"
+           + formattedHijriYear(date.year);
+}
+
+std::string formatObservationalHijriDate(
+    const ObservationalHijriDate& date)
+{
+    const std::string calculated = formatHijriDate(date.calculated);
+    const std::string observed = formatHijriDate(date.observed);
+    if (calculated.empty() || observed.empty())
+        return {};
+    if (sameHijriDate(date.calculated, date.observed))
+        return calculated;
+    return calculated + " - " + observed;
+}
+
+bool sunsetHasOccurred(double currentJd, double sunsetJd)
+{
+    return std::isfinite(currentJd) && std::isfinite(sunsetJd)
+           && currentJd >= sunsetJd;
+}
+
 double odehPolynomial(double widthArcmin)
 {
     return -0.1018 * widthArcmin * widthArcmin * widthArcmin
@@ -220,7 +502,10 @@ std::string formatLocalTime(double jd, double utcOffsetHours)
     double localDayFraction = std::fmod(jd + 0.5 + utcOffsetHours / 24.0, 1.0);
     if (localDayFraction < 0.0)
         localDayFraction += 1.0;
-    int seconds = static_cast<int>(std::llround(localDayFraction * 86400.0));
+    // Match StelUtils::getTimeFromJulianDay(), used by Stellarium's bottom
+    // clock: retain the containing second instead of rounding into the next.
+    int seconds = static_cast<int>(
+        std::floor(localDayFraction * 86400.0 + 0.0001));
     seconds %= 86400;
 
     const int hours = seconds / 3600;
@@ -302,10 +587,10 @@ std::optional<NavigationTime> chooseNavigationTime(
         return NavigationTime{*bestTimeJd, EventTimeBasis::BestTime};
     if (mode == NavigationMode::MoonUpOnly || !std::isfinite(solarEventJd))
         return std::nullopt;
-    return NavigationTime{solarEventJd,
-                          kind == CrescentEventKind::Morning
-                              ? EventTimeBasis::Sunrise
-                              : EventTimeBasis::Sunset};
+    if (kind == CrescentEventKind::Morning)
+        return NavigationTime{solarEventJd, EventTimeBasis::Sunrise};
+    return NavigationTime{solarEventJd + POST_SUNSET_NAVIGATION_MARGIN_DAYS,
+                          EventTimeBasis::Sunset};
 }
 
 void sortCrescentEvents(std::vector<CrescentEvent>& events)

@@ -193,6 +193,22 @@
    <source>Beginning of %1 %2 AH</source>
    <translation>غرة %1 %2 هـ</translation>
   </message>
+  <message>
+   <source>Not available</source>
+   <translation>غير متاح</translation>
+  </message>
+  <message>
+   <source>Gregorian date:</source>
+   <translation>التاريخ الجريجوري:</translation>
+  </message>
+  <message>
+   <source>Julian date:</source>
+   <translation>التاريخ اليولياني:</translation>
+  </message>
+  <message>
+   <source>Hijri date:</source>
+   <translation>التاريخ الهجري:</translation>
+  </message>
  </context>
  <context>
   <name>VisibilityContours</name>
@@ -227,6 +243,14 @@
   <message>
    <source>V at best time: %1&lt;br/&gt;</source>
    <translation>V عند أفضل وقت: %1&lt;br/&gt;</translation>
+  </message>
+  <message>
+   <source>Hijri date: %1&lt;br/&gt;</source>
+   <translation>التاريخ الهجري: %1&lt;br/&gt;</translation>
+  </message>
+  <message>
+   <source>Hijri date: Not available&lt;br/&gt;</source>
+   <translation>التاريخ الهجري: غير متاح&lt;br/&gt;</translation>
   </message>
   <message>
    <source>Conjunction day %1   Δ=%2 d</source>

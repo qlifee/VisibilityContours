@@ -6,6 +6,7 @@
 #include "VisibilityMath.hpp"
 
 #include <QObject>
+#include <vector>
 
 class QSettings;
 class QTranslator;
@@ -76,6 +77,21 @@ private:
     double cachedBestJd;
     double cachedBestV;
     bool cachedBestAvailable;
+    double cachedHijriValidFromJd;
+    double cachedHijriValidUntilJd;
+    double cachedHijriLatitude;
+    double cachedHijriLongitude;
+    int cachedHijriAltitude;
+    QString cachedHijriTimeZone;
+    VisibilityMath::ObservationalHijriDate cachedHijriDate;
+    bool cachedHijriAvailable;
+    double cachedHijriEventsConjunctionJde;
+    double cachedHijriEventsNextConjunctionJde;
+    double cachedHijriEventsLatitude;
+    double cachedHijriEventsLongitude;
+    int cachedHijriEventsAltitude;
+    QString cachedHijriEventsTimeZone;
+    std::vector<VisibilityMath::HijriVisibilityEvent> cachedHijriEvents;
     QString selectedCriterion;
     bool bandsFilled;
     bool navigatorShown;

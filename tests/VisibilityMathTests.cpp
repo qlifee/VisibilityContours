@@ -23,6 +23,10 @@ int main()
     assert(!useArabicForProgramLanguage("en"));
     assert(!useArabicForProgramLanguage("fa"));
     assert(!useArabicForProgramLanguage("a"));
+    assert(!isGregorianCalendarDate(1582, 10, 4));
+    assert(isGregorianCalendarDate(1582, 10, 15));
+    assert(!isGregorianCalendarDate(1200, 1, 1));
+    assert(isGregorianCalendarDate(2026, 8, 22));
 
     assert(eventFilterFromString("both") == EventFilter::Both);
     assert(eventFilterFromString("Morning") == EventFilter::Morning);
@@ -53,6 +57,197 @@ int main()
            && rolloverEvening->month == 1);
     assert(!hijriMonthYearForEvent(2026, 2, 30,
                                    CrescentEventKind::Morning));
+
+    assert(close(HIJRI_CALCULATED_START_V, 1.35));
+    assert(close(HIJRI_OBSERVED_START_V, 5.83));
+    const HijriDate rabiAwwal30{1448, 3, 30};
+    const HijriDate rabiAkhir1{1448, 4, 1};
+    assert(validHijriDate(rabiAwwal30));
+    assert(!validHijriDate({1448, 13, 1}));
+    assert(sameHijriDate(rabiAkhir1, {1448, 4, 1}));
+    assert(!sameHijriDate(rabiAkhir1, rabiAwwal30));
+
+    assert(sameHijriDate(
+        advanceHijriDateAtSunset({1448, 3, 27}, true),
+        HijriDate{1448, 3, 28}));
+    assert(sameHijriDate(
+        advanceHijriDateAtSunset({1448, 3, 28}, true),
+        rabiAkhir1));
+    assert(sameHijriDate(
+        advanceHijriDateAtSunset({1448, 3, 29}, false),
+        rabiAwwal30));
+    assert(sameHijriDate(
+        advanceHijriDateAtSunset(rabiAwwal30, false),
+        rabiAkhir1));
+    assert(sameHijriDate(
+        advanceHijriDateAtSunset({1447, 12, 30}, false),
+        HijriDate{1448, 1, 1}));
+    assert(sameHijriDate(
+        advanceHijriDateAtSunset({-1, 12, 30}, false),
+        HijriDate{1, 1, 1}));
+    assert(!validHijriDate(
+        advanceHijriDateAtSunset({1448, 0, 1}, false)));
+
+    const ObservationalHijriDate aligned{{1448, 3, 30},
+                                         {1448, 3, 30}};
+    const auto belowCalculated = advanceObservationalHijriAtSunset(
+        aligned, HIJRI_CALCULATED_START_V - 1e-9);
+    assert(sameHijriDate(belowCalculated.calculated, rabiAkhir1));
+    assert(sameHijriDate(belowCalculated.observed, rabiAkhir1));
+
+    const ObservationalHijriDate lowerBoundaryState{{1448, 3, 29},
+                                                     {1448, 3, 29}};
+    const auto lowerBoundaryBelow = advanceObservationalHijriAtSunset(
+        lowerBoundaryState, HIJRI_CALCULATED_START_V - 1e-9);
+    assert(sameHijriDate(lowerBoundaryBelow.calculated, rabiAwwal30));
+    assert(sameHijriDate(lowerBoundaryBelow.observed, rabiAwwal30));
+
+    const auto calculatedOnly = advanceObservationalHijriAtSunset(
+        lowerBoundaryState, HIJRI_CALCULATED_START_V);
+    assert(sameHijriDate(calculatedOnly.calculated, rabiAkhir1));
+    assert(sameHijriDate(calculatedOnly.observed, rabiAwwal30));
+    assert(formatObservationalHijriDate(calculatedOnly)
+           == "01/04/1448 - 30/03/1448");
+
+    const auto calculatedOnlyUpperEdge = advanceObservationalHijriAtSunset(
+        lowerBoundaryState, HIJRI_OBSERVED_START_V - 1e-9);
+    assert(sameHijriDate(calculatedOnlyUpperEdge.calculated, rabiAkhir1));
+    assert(sameHijriDate(calculatedOnlyUpperEdge.observed, rabiAwwal30));
+
+    const auto bothCriteria = advanceObservationalHijriAtSunset(
+        lowerBoundaryState, HIJRI_OBSERVED_START_V);
+    assert(sameHijriDate(bothCriteria.calculated, rabiAkhir1));
+    assert(sameHijriDate(bothCriteria.observed, rabiAkhir1));
+    assert(formatObservationalHijriDate(bothCriteria) == "01/04/1448");
+
+    const auto aboveObserved = advanceObservationalHijriAtSunset(
+        lowerBoundaryState, HIJRI_OBSERVED_START_V + 1e-9);
+    assert(sameHijriDate(aboveObserved.calculated, rabiAkhir1));
+    assert(sameHijriDate(aboveObserved.observed, rabiAkhir1));
+
+    const auto advancedRange = advanceObservationalHijriAtSunset(
+        calculatedOnly, std::nullopt);
+    assert(sameHijriDate(advancedRange.calculated,
+                         HijriDate{1448, 4, 2}));
+    assert(sameHijriDate(advancedRange.observed, rabiAkhir1));
+    assert(formatObservationalHijriDate(advancedRange)
+           == "02/04/1448 - 01/04/1448");
+    assert(formatHijriDate({1448, 4, 1}) == "01/04/1448");
+    assert(formatHijriDate({-54, 1, 1}) == "01/01/-0054");
+    assert(formatHijriDate({1448, 0, 1}).empty());
+    assert(!sunsetHasOccurred(100.0 - 1e-9, 100.0));
+    assert(sunsetHasOccurred(100.0, 100.0));
+    assert(sunsetHasOccurred(100.0 + 1e-9, 100.0));
+    assert(!sunsetHasOccurred(std::nan(""), 100.0));
+
+    assert(!hijriMonthStartEligible(27));
+    assert(hijriMonthStartEligible(28));
+    assert(hijriMonthStartEligible(29));
+    assert(hijriMonthStartEligible(30));
+    assert(!hijriMonthStartEligible(31));
+    assert(!hijriForcedRolloverDue(100, 129));
+    assert(hijriForcedRolloverDue(100, 130));
+    assert(close(*selectPrecedingConjunction(
+                     100.0, 99.0, std::nullopt), 99.0));
+    assert(close(*selectPrecedingConjunction(
+                     100.0, 101.0, 99.0), 99.0));
+    assert(!selectPrecedingConjunction(
+        100.0, 101.0, std::nullopt));
+    assert(lunationCacheCoversJde(100.0, 100.0, 129.5));
+    assert(lunationCacheCoversJde(129.499999, 100.0, 129.5));
+    assert(!lunationCacheCoversJde(99.999999, 100.0, 129.5));
+    assert(!lunationCacheCoversJde(129.5, 100.0, 129.5));
+    assert(!lunationCacheCoversJde(
+        110.0, 100.0, std::nan("")));
+
+    const auto hijriEvent = [](
+        long long localDay, int year, int month, int day,
+        double conjunctionJde, double sunsetJd, double bestTimeJde,
+        int dayIndex, double v)
+    {
+        return HijriVisibilityEvent{
+            localDay, year, month, day, conjunctionJde,
+            sunsetJd, bestTimeJde, bestTimeJde, dayIndex, v};
+    };
+
+    const std::vector<HijriVisibilityEvent> dohaHistory = {
+        hijriEvent(100, 2026, 7, 15, 99.5, 100.70, 100.75, 1, 6.00),
+        hijriEvent(101, 2026, 7, 16, 99.5, 101.70, 101.75, 2, 10.00),
+        hijriEvent(129, 2026, 8, 13, 128.5, 129.70, 129.75, 1, 2.05),
+        hijriEvent(130, 2026, 8, 14, 128.5, 130.70, 130.75, 2, 15.92),
+        hijriEvent(131, 2026, 8, 15, 128.5, 131.70, 131.75, 3, 31.57)
+    };
+    const auto dohaAugust13 = observationalHijriFromLunationEvents(
+        dohaHistory, 129, 129.71, 94.71);
+    const auto dohaAugust14 = observationalHijriFromLunationEvents(
+        dohaHistory, 130, 130.71, 95.71);
+    const auto dohaAugust15 = observationalHijriFromLunationEvents(
+        dohaHistory, 131, 131.71, 96.71);
+    assert(dohaAugust13 && formatObservationalHijriDate(*dohaAugust13)
+                              == "01/03/1448 - 30/02/1448");
+    assert(dohaAugust14 && formatObservationalHijriDate(*dohaAugust14)
+                              == "02/03/1448 - 01/03/1448");
+    assert(dohaAugust15 && formatObservationalHijriDate(*dohaAugust15)
+                              == "03/03/1448 - 02/03/1448");
+    assert(!observationalHijriFromLunationEvents(
+        {hijriEvent(129, 2026, 8, 13, 128.5,
+                    129.70, 129.75, 1, 2.05)},
+        129, 129.71, 94.71));
+
+    // The lower track may start in bin 0 while the stricter track continues
+    // to bin +1. Both results become active at their event's sunset.
+    const std::vector<HijriVisibilityEvent> independentCrossings = {
+        hijriEvent(100, 2026, 7, 15, 99.5, 100.70, 100.75, 1, 6.00),
+        hijriEvent(128, 2026, 8, 12, 128.4, 128.70, 128.75, 0, 2.00),
+        hijriEvent(129, 2026, 8, 13, 128.4, 129.70, 129.75, 1, 6.00)
+    };
+    const auto independent = observationalHijriFromLunationEvents(
+        independentCrossings, 129, 129.71, 94.71);
+    assert(independent && independent->calculated.day == 2
+           && independent->observed.day == 1);
+
+    // A rounded bin-0 event before conjunction is not a waxing-crescent start.
+    assert(!observationalHijriFromLunationEvents(
+        {hijriEvent(100, 2026, 7, 15, 100.0,
+                    100.70, 99.90, 0, 20.0)},
+        100, 100.71, 65.71));
+
+    // A qualifying day-27 event is skipped; day 28 starts the month, and a
+    // later qualifying event in the same lunation does not restart it.
+    const std::vector<HijriVisibilityEvent> earlyCrossing = {
+        hijriEvent(100, 2026, 7, 15, 99.5, 100.70, 100.75, 1, 6.00),
+        hijriEvent(126, 2026, 8, 10, 126.4, 126.70, 126.75, 0, 6.00),
+        hijriEvent(127, 2026, 8, 11, 126.4, 127.70, 127.75, 1, 6.00),
+        hijriEvent(128, 2026, 8, 12, 126.4, 128.70, 128.75, 2, 6.00)
+    };
+    const auto afterLaterCrossing = observationalHijriFromLunationEvents(
+        earlyCrossing, 128, 128.71, 93.71);
+    assert(afterLaterCrossing
+           && afterLaterCrossing->calculated.day == 2
+           && afterLaterCrossing->observed.day == 2);
+
+    const auto beforeEligibleSunset = observationalHijriFromLunationEvents(
+        earlyCrossing, 126, 127.69, 92.69);
+    const auto afterEligibleSunset = observationalHijriFromLunationEvents(
+        earlyCrossing, 127, 127.71, 92.71);
+    assert(beforeEligibleSunset
+           && beforeEligibleSunset->calculated.day == 27);
+    assert(afterEligibleSunset
+           && afterEligibleSunset->calculated.day == 1);
+
+    // With no accepted crossing, the next sunset after day 30 forces day 1.
+    const auto forced = observationalHijriFromLunationEvents(
+        {hijriEvent(100, 2026, 7, 15, 99.5,
+                    100.70, 100.75, 1, 6.00)},
+        130, 130.71, 95.71);
+    assert(forced && forced->calculated.day == 1
+           && forced->observed.day == 1);
+
+    // A synchronization event outside the preceding 35 days is unavailable.
+    assert(!observationalHijriFromLunationEvents(
+        {hijriEvent(100, 2026, 7, 15, 99.5,
+                    100.70, 100.75, 1, 6.00)},
+        136, 136.71, 101.71));
 
     assert(close(CONVENTIONAL_SUN_CENTER_ALTITUDE_DEG, -0.8333));
     assert(close(theoreticalWidth(0.0, 0.0), 0.0));
@@ -89,7 +284,10 @@ int main()
     assert(formatLocalTime(2451544.5 + (5.0 * 3600.0 + 6.0 * 60.0 + 7.0) / 86400.0, 0.0)
            == "5h06m07s");
     assert(formatLocalTime(2451544.5, 3.0) == "3h00m00s");
-    assert(formatLocalTime(2451544.5 + 86399.6 / 86400.0, 0.0) == "0h00m00s");
+    assert(formatLocalTime(2451544.5 + 86399.6 / 86400.0, 0.0)
+           == "23h59m59s");
+    assert(formatLocalTime(2451544.5 + 86400.0 / 86400.0, 0.0)
+           == "0h00m00s");
     assert(formatLocalTime(2451544.5, -1.0) == "23h00m00s");
 
     const auto evening = eveningBestTime(100.0, 100.09);
@@ -149,7 +347,11 @@ int main()
     const auto sunsetFallback = chooseNavigationTime(
         NavigationMode::MoonUpOrDown, CrescentEventKind::Evening,
         100.70, std::nullopt, -1.0);
-    assert(sunsetFallback && close(sunsetFallback->jd, 100.70));
+    assert(sunsetFallback
+           && close(sunsetFallback->jd,
+                    100.70 + POST_SUNSET_NAVIGATION_MARGIN_DAYS));
+    assert(sunsetFallback->jd > 100.70);
+    assert(sunsetHasOccurred(sunsetFallback->jd, 100.70));
     assert(sunsetFallback->basis == EventTimeBasis::Sunset);
     assert(!chooseNavigationTime(
         NavigationMode::MoonUpOrDown, CrescentEventKind::Evening,

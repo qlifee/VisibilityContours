@@ -26,7 +26,7 @@ env:
   QT_VERSION: "6.9.3"
   XCODE_VERSION: "26.5"
   MACOSX_DEPLOYMENT_TARGET: "12.0"
-  PLUGIN_VERSION: "0.5.2"
+  PLUGIN_VERSION: "0.6.0"
 
 jobs:
   inspect-build-package:
@@ -329,10 +329,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: VisibilityContours-0.5.2-macOS-universal-test
+          name: VisibilityContours-0.6.0-macOS-universal-test
           path: |
-            artifact/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip
-            artifact/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip.sha256
+            artifact/VisibilityContours-0.6.0-Stellarium-26.2-macOS-universal.zip
+            artifact/VisibilityContours-0.6.0-Stellarium-26.2-macOS-universal.zip.sha256
             diagnostics/**
           if-no-files-found: warn
 
@@ -378,7 +378,7 @@ jobs:
       - name: Download inspected universal test package
         uses: actions/download-artifact@v6
         with:
-          name: VisibilityContours-0.5.2-macOS-universal-test
+          name: VisibilityContours-0.6.0-macOS-universal-test
           path: incoming
 
       - name: Import Developer ID identity into temporary keychain
@@ -541,10 +541,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: VisibilityContours-0.5.2-macOS-universal-notarized-test
+          name: VisibilityContours-0.6.0-macOS-universal-notarized-test
           path: |
-            notarized-artifact/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip
-            notarized-artifact/VisibilityContours-0.5.2-Stellarium-26.2-macOS-universal.zip.sha256
+            notarized-artifact/VisibilityContours-0.6.0-Stellarium-26.2-macOS-universal.zip
+            notarized-artifact/VisibilityContours-0.6.0-Stellarium-26.2-macOS-universal.zip.sha256
             notarization-diagnostics/**
           if-no-files-found: warn
 
