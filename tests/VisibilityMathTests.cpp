@@ -27,6 +27,20 @@ int main()
     assert(isGregorianCalendarDate(1582, 10, 15));
     assert(!isGregorianCalendarDate(1200, 1, 1));
     assert(isGregorianCalendarDate(2026, 8, 22));
+    assert(formatConjunctionAge(0.0) == "+0h00m");
+    assert(formatConjunctionAge(0.77) == "+18h29m");
+    assert(formatConjunctionAge(-0.77) == "-18h29m");
+    assert(formatConjunctionAge(1.75) == "+42h00m");
+    assert(formatConjunctionAge((5.0 * 60.0 + 7.0) / 1440.0)
+           == "+5h07m");
+    assert(formatConjunctionAge(59.6 / 1440.0) == "+1h00m");
+    assert(formatConjunctionAge(-59.6 / 1440.0) == "-1h00m");
+    assert(formatConjunctionAge(29.0 / 86400.0) == "+0h00m");
+    assert(formatConjunctionAge(30.0 / 86400.0) == "+0h01m");
+    assert(formatConjunctionAge(std::nan("")).empty());
+    assert(formatSignedDuration(0.0) == "+0h00m");
+    assert(formatSignedDuration(-17.0 / 1440.0) == "-0h17m");
+    assert(formatSignedDuration(83.0 / 1440.0) == "+1h23m");
 
     assert(eventFilterFromString("both") == EventFilter::Both);
     assert(eventFilterFromString("Morning") == EventFilter::Morning);
@@ -252,6 +266,30 @@ int main()
     assert(close(CONVENTIONAL_SUN_CENTER_ALTITUDE_DEG, -0.8333));
     assert(close(theoreticalWidth(0.0, 0.0), 0.0));
     assert(close(illuminatedWidth(0.1, 0.5), 3.0));
+    assert(close(arcminutesToArcseconds(3.0), 180.0));
+    assert(std::isnan(arcminutesToArcseconds(std::nan(""))));
+    assert(close(signedAngleDifferenceDeg(1.0, 359.0), 2.0));
+    assert(close(signedAngleDifferenceDeg(359.0, 1.0), -2.0));
+    assert(close(signedAngleDifferenceDeg(180.0, 0.0), 180.0));
+    assert(close(signedAngleDifferenceDeg(0.0, 180.0), 180.0));
+    assert(std::isnan(signedAngleDifferenceDeg(std::nan(""), 0.0)));
+
+    const auto wrappedDifference = [](double value)
+    {
+        constexpr double root = 100.125;
+        constexpr double pi = 3.141592653589793238462643383279502884;
+        double difference = value - root;
+        while (difference <= -pi) difference += 2.0 * pi;
+        while (difference > pi) difference -= 2.0 * pi;
+        return difference;
+    };
+    const auto refinedRoot = refineWrappedLongitudeRoot(
+        wrappedDifference, 100.0);
+    assert(refinedRoot && close(*refinedRoot, 100.125, 1e-6));
+    assert(!refineWrappedLongitudeRoot(
+        [](double) { return 1.0; }, 100.0));
+    assert(!refineWrappedLongitudeRoot(
+        [](double) { return std::nan(""); }, 100.0));
     assert(std::isnan(horizontalParallaxDeg(0.0, 1.0)));
 
     const auto y = yallopBoundaries(1.0);

@@ -70,10 +70,14 @@ private:
     int cachedBestAltitude;
     double cachedEveningJd;
     double cachedEveningV;
+    double cachedEveningLagDays;
     double cachedMorningJd;
     double cachedMorningV;
+    double cachedMorningLagDays;
     bool cachedEveningAvailable;
     bool cachedMorningAvailable;
+    bool cachedEveningLagAvailable;
+    bool cachedMorningLagAvailable;
     double cachedBestJd;
     double cachedBestV;
     bool cachedBestAvailable;

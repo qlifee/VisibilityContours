@@ -17,6 +17,7 @@
 #include "StelPainter.hpp"
 #include "StelProjector.hpp"
 #include "StelUtils.hpp"
+#include "precession.h"
 
 #include <QDebug>
 #include <QCoreApplication>
@@ -55,6 +56,7 @@ constexpr double DAZ_MAX_DEG =  55.0;
 constexpr double DAZ_STEP_DEG = 0.25;
 constexpr double GREEN_BAND_UPPER_V = 27.0;
 constexpr double SYNODIC_MONTH_DAYS = 29.530588853;
+constexpr double LIGHT_SPEED_AU_PER_DAY = 173.1446326846693;
 constexpr int MAX_NAVIGATOR_LUNATIONS = 24;
 constexpr double NAVIGATION_EPSILON_DAYS = 1.0 / 86400.0;
 constexpr double HIJRI_HISTORY_DAYS = 35.0;
@@ -147,8 +149,8 @@ double moonSunLongitudeDifference(const PlanetP& moon, const PlanetP& earth, dou
 
 // Find the nearest new-moon longitude conjunction by bracketing a zero of Δlambda.
 // This does not alter Stellarium's clock or the currently displayed ephemeris state.
-bool findNearestConjunction(const PlanetP& moon, const PlanetP& earth,
-                            double currentJDE, double& conjunctionJDE)
+bool findNearestGeometricConjunction(const PlanetP& moon, const PlanetP& earth,
+                                     double currentJDE, double& conjunctionJDE)
 {
     constexpr double SEARCH_HALF_SPAN_DAYS = 4.0;
     constexpr double SCAN_STEP_DAYS = 0.25;
@@ -217,66 +219,6 @@ bool findNearestConjunction(const PlanetP& moon, const PlanetP& earth,
     return true;
 }
 
-bool findAdjacentConjunction(const PlanetP& moon, const PlanetP& earth,
-                             double conjunctionJde, int direction,
-                             double& adjacentJde)
-{
-    if (direction == 0 || !std::isfinite(conjunctionJde))
-        return false;
-    const double seed = conjunctionJde
-                        + (direction > 0 ? SYNODIC_MONTH_DAYS : -SYNODIC_MONTH_DAYS);
-    if (!findNearestConjunction(moon, earth, seed, adjacentJde))
-        return false;
-    return direction > 0 ? adjacentJde > conjunctionJde + 20.0
-                         : adjacentJde < conjunctionJde - 20.0;
-}
-
-bool findConjunctionFromAnyPhase(const PlanetP& moon, const PlanetP& earth,
-                                 double currentJde, double& conjunctionJde)
-{
-    bool found = false;
-    double bestDistance = std::numeric_limits<double>::infinity();
-    // The narrow numerical solver is deliberately retained. Multiple seeds make
-    // it usable from any lunar phase without treating a mean synodic period as
-    // the conjunction itself.
-    for (double offset = -16.0; offset <= 16.0; offset += 4.0)
-    {
-        double candidate = 0.0;
-        if (!findNearestConjunction(moon, earth, currentJde + offset, candidate))
-            continue;
-        const double distance = std::abs(candidate - currentJde);
-        if (distance < bestDistance)
-        {
-            bestDistance = distance;
-            conjunctionJde = candidate;
-            found = true;
-        }
-    }
-    return found;
-}
-
-bool findPrecedingConjunction(const PlanetP& moon, const PlanetP& earth,
-                              double currentJde, double& conjunctionJde)
-{
-    double nearestJde = 0.0;
-    if (!findConjunctionFromAnyPhase(moon, earth, currentJde, nearestJde))
-        return false;
-
-    std::optional<double> previousJde;
-    if (nearestJde > currentJde)
-    {
-        double value = 0.0;
-        if (findAdjacentConjunction(moon, earth, nearestJde, -1, value))
-            previousJde = value;
-    }
-    const auto selected = VisibilityMath::selectPrecedingConjunction(
-        currentJde, nearestJde, previousJde);
-    if (!selected)
-        return false;
-    conjunctionJde = *selected;
-    return true;
-}
-
 Vec3d altAzVector(double azRad, double altRad)
 {
     Vec3d v;
@@ -297,6 +239,10 @@ double altitudeRad(const Vec3d& position)
 struct ObservationalGeometry
 {
     double moonAltitudeDeg;
+    double sunAltitudeDeg;
+    double arcvDeg;
+    double dazDeg;
+    double widthArcmin;
     double v;
 };
 
@@ -309,6 +255,387 @@ double jdForJde(StelCore* core, double jde)
 {
     double jd = jde - core->computeDeltaT(jde) / 86400.0;
     return jde - core->computeDeltaT(jd) / 86400.0;
+}
+
+class ApparentStateGuard
+{
+public:
+    ApparentStateGuard(StelCore* value, SolarSystem* system)
+        : core(value)
+        , solarSystem(system)
+        , jd(value->getJDOfLastJDUpdate())
+        , millis(value->getMilliSecondsOfLastJDUpdate())
+        , useAberration(value->getUseAberration())
+        , aberrationFactor(value->getAberrationFactor())
+        , useNutation(value->getUseNutation())
+        , useTopocentric(value->getUseTopocentricCoordinates())
+        , lightTravelTime(system->getFlagLightTravelTime())
+    {
+        solarSystem->setFlagLightTravelTime(true);
+        core->setUseAberration(true);
+        core->setAberrationFactor(1.0);
+        core->setUseNutation(true);
+        core->setUseTopocentricCoordinates(true);
+        core->update(0.0);
+        solarSystem->computePositions(core, core->getJDE(),
+                                      core->getCurrentPlanet());
+        core->update(0.0);
+    }
+
+    ~ApparentStateGuard()
+    {
+        solarSystem->setFlagLightTravelTime(lightTravelTime);
+        core->setUseAberration(useAberration);
+        core->setAberrationFactor(aberrationFactor);
+        core->setUseNutation(useNutation);
+        core->setUseTopocentricCoordinates(useTopocentric);
+        core->setJD(jd);
+        core->setMilliSecondsOfLastJDUpdate(millis);
+        core->update(0.0);
+        solarSystem->computePositions(core, core->getJDE(),
+                                      core->getCurrentPlanet());
+        core->update(0.0);
+    }
+
+private:
+    StelCore* core;
+    SolarSystem* solarSystem;
+    double jd;
+    qint64 millis;
+    bool useAberration;
+    double aberrationFactor;
+    bool useNutation;
+    bool useTopocentric;
+    bool lightTravelTime;
+};
+
+struct TopocentricConjunctionCacheEntry
+{
+    double geocentricJde;
+    double latitude;
+    double longitude;
+    int altitude;
+    double topocentricJde;
+};
+
+std::vector<double> apparentGeocentricConjunctionCache;
+std::vector<TopocentricConjunctionCacheEntry>
+    apparentTopocentricConjunctionCache;
+double topocentricCacheLatitude = std::numeric_limits<double>::quiet_NaN();
+double topocentricCacheLongitude = std::numeric_limits<double>::quiet_NaN();
+int topocentricCacheAltitude = std::numeric_limits<int>::min();
+
+void rememberGeocentricConjunction(double conjunctionJde)
+{
+    for (const double cached : apparentGeocentricConjunctionCache)
+    {
+        if (std::abs(cached - conjunctionJde) < 1e-6)
+            return;
+    }
+    apparentGeocentricConjunctionCache.push_back(conjunctionJde);
+    if (apparentGeocentricConjunctionCache.size() > 64)
+        apparentGeocentricConjunctionCache.erase(
+            apparentGeocentricConjunctionCache.begin());
+}
+
+Vec3d observerOffsetVsopAtJde(StelCore* core, double jde)
+{
+    const StelObserver* observer = core ? core->getCurrentObserver() : nullptr;
+    if (!observer)
+        return Vec3d(0.0);
+    const StelLocation& location = core->getCurrentLocation();
+    const Vec4d offset = observer->getTopographicOffsetFromCenter();
+    const double sigma = location.getLatitude() * DEG2RAD - offset[2];
+    const Vec3d observerAltAz(offset[3] * std::sin(sigma), 0.0,
+                             offset[3] * std::cos(sigma));
+    const double jd = jdForJde(core, jde);
+    const Mat4d altAzToVsop =
+        observer->getRotEquatorialToVsop87()
+        * observer->getRotAltAzToEquatorial(jd, jde);
+    return altAzToVsop.multiplyWithoutTranslation(observerAltAz);
+}
+
+double topocentricGeometricLongitudeDifference(
+    StelCore* core, const PlanetP& moon, const PlanetP& earth, double jde)
+{
+    if (!core || !moon || !earth || !std::isfinite(jde))
+        return std::numeric_limits<double>::quiet_NaN();
+    const Vec3d observerVsop = observerOffsetVsopAtJde(core, jde);
+    const Vec3d moonTopo = moon->getEclipticPos(jde) - observerVsop;
+    const Vec3d sunTopo = -earth->getEclipticPos(jde) - observerVsop;
+    if (moonTopo.normSquared() <= 0.0 || sunTopo.normSquared() <= 0.0)
+        return std::numeric_limits<double>::quiet_NaN();
+    return wrapPi(std::atan2(moonTopo[1], moonTopo[0])
+                  - std::atan2(sunTopo[1], sunTopo[0]));
+}
+
+class ApparentLongitudeEvaluator
+{
+public:
+    ApparentLongitudeEvaluator(StelCore* coreValue,
+                               SolarSystem* solarSystemValue,
+                               const PlanetP& sunValue,
+                               const PlanetP& moonValue,
+                               const PlanetP& earthValue,
+                               bool topocentricValue)
+        : core(coreValue)
+        , solarSystem(solarSystemValue)
+        , sun(sunValue)
+        , moon(moonValue)
+        , earth(earthValue)
+        , topocentric(topocentricValue)
+        , guard(coreValue, solarSystemValue)
+    {
+    }
+
+    double operator()(double jde)
+    {
+        if (!std::isfinite(jde))
+            return std::numeric_limits<double>::quiet_NaN();
+        core->setJD(jdForJde(core, jde));
+        core->update(0.0);
+        solarSystem->computePositions(core, core->getJDE(),
+                                      core->getCurrentPlanet());
+        // computePositions() updates Earth's date-dependent orientation.
+        // Rebuild the core transforms once more so the apparent equatorial
+        // vectors are converted through the matching true equinox/ecliptic.
+        core->update(0.0);
+
+        double moonLongitude = 0.0;
+        double sunLongitude = 0.0;
+        if (!eclipticLongitude(moon, moonLongitude)
+            || !eclipticLongitude(sun, sunLongitude))
+            return std::numeric_limits<double>::quiet_NaN();
+        return wrapPi(moonLongitude - sunLongitude);
+    }
+
+private:
+    bool eclipticLongitude(const PlanetP& body, double& longitude) const
+    {
+        Vec3d apparentJ2000 = body->getJ2000EquatorialPos(core);
+        if (apparentJ2000.normSquared() <= 0.0)
+            return false;
+
+        if (!topocentric)
+        {
+            // Planet::getJ2000EquatorialPos() is observer-centered. Restore
+            // the surface offset to obtain the apparent place at Earth center
+            // while retaining Stellarium's light-time and annual aberration.
+            const Vec3d observerOffset =
+                core->getObserverHeliocentricEclipticPos()
+                - earth->getHeliocentricEclipticPos();
+            apparentJ2000 += StelCore::matVsop87ToJ2000
+                                 .multiplyWithoutTranslation(observerOffset);
+        }
+        else
+        {
+            // Preserve Stellarium's geocentric apparent convention, including
+            // its special Earth-observer treatment of the Moon, and add only
+            // the observer's rotational contribution for diurnal aberration.
+            const Vec3d rotationalVelocity =
+                core->getObserverHeliocentricEclipticVelocity()
+                - earth->getHeliocentricEclipticVelocity();
+            const Vec3d diurnalPush = rotationalVelocity
+                                      * (apparentJ2000.norm()
+                                         / LIGHT_SPEED_AU_PER_DAY);
+            apparentJ2000 += StelCore::matVsop87ToJ2000
+                                 .multiplyWithoutTranslation(diurnalPush);
+        }
+
+        const Vec3d equinoxEquatorial = core->j2000ToEquinoxEqu(
+            apparentJ2000, StelCore::RefractionOff);
+        double rightAscension = 0.0;
+        double declination = 0.0;
+        StelUtils::rectToSphe(&rightAscension, &declination,
+                              equinoxEquatorial);
+
+        double epsilonA = 0.0;
+        double chiA = 0.0;
+        double omegaA = 0.0;
+        double psiA = 0.0;
+        getPrecessionAnglesVondrak(core->getJDE(), &epsilonA, &chiA,
+                                   &omegaA, &psiA);
+        double deltaPsi = 0.0;
+        double deltaEpsilon = 0.0;
+        getNutationAngles(core->getJDE(), &deltaPsi, &deltaEpsilon);
+        double latitude = 0.0;
+        StelUtils::equToEcl(rightAscension, declination,
+                            epsilonA + deltaEpsilon,
+                            &longitude, &latitude);
+        return std::isfinite(longitude);
+    }
+
+    StelCore* core;
+    SolarSystem* solarSystem;
+    PlanetP sun;
+    PlanetP moon;
+    PlanetP earth;
+    bool topocentric;
+    ApparentStateGuard guard;
+};
+
+bool refineApparentConjunction(StelCore* core, SolarSystem* solarSystem,
+                               const PlanetP& sun, const PlanetP& moon,
+                               const PlanetP& earth, double seedJde,
+                               bool topocentric, double& conjunctionJde)
+{
+    if (!core || !solarSystem || !sun || !moon || !earth
+        || !std::isfinite(seedJde))
+        return false;
+    ApparentLongitudeEvaluator evaluator(core, solarSystem, sun, moon, earth,
+                                         topocentric);
+    const auto refined = VisibilityMath::refineWrappedLongitudeRoot(
+        [&evaluator](double jde) { return evaluator(jde); },
+        seedJde, topocentric ? 0.125 : 0.05);
+    if (!refined)
+        return false;
+    conjunctionJde = *refined;
+    return true;
+}
+
+bool findNearestConjunction(StelCore* core, SolarSystem* solarSystem,
+                            const PlanetP& sun, const PlanetP& moon,
+                            const PlanetP& earth, double currentJde,
+                            double& conjunctionJde)
+{
+    double geometricSeed = 0.0;
+    if (!findNearestGeometricConjunction(moon, earth, currentJde,
+                                         geometricSeed))
+        return false;
+    for (const double cached : apparentGeocentricConjunctionCache)
+    {
+        if (std::abs(cached - geometricSeed) < 0.5)
+        {
+            conjunctionJde = cached;
+            return true;
+        }
+    }
+    if (!refineApparentConjunction(core, solarSystem, sun, moon, earth,
+                                   geometricSeed, false, conjunctionJde))
+        return false;
+    rememberGeocentricConjunction(conjunctionJde);
+    return true;
+}
+
+bool findAdjacentConjunction(StelCore* core, SolarSystem* solarSystem,
+                             const PlanetP& sun, const PlanetP& moon,
+                             const PlanetP& earth, double conjunctionJde,
+                             int direction, double& adjacentJde)
+{
+    if (direction == 0 || !std::isfinite(conjunctionJde))
+        return false;
+    const double seed = conjunctionJde
+                        + (direction > 0 ? SYNODIC_MONTH_DAYS
+                                         : -SYNODIC_MONTH_DAYS);
+    if (!findNearestConjunction(core, solarSystem, sun, moon, earth,
+                                seed, adjacentJde))
+        return false;
+    return direction > 0 ? adjacentJde > conjunctionJde + 20.0
+                         : adjacentJde < conjunctionJde - 20.0;
+}
+
+bool findConjunctionFromAnyPhase(StelCore* core, SolarSystem* solarSystem,
+                                 const PlanetP& sun, const PlanetP& moon,
+                                 const PlanetP& earth, double currentJde,
+                                 double& conjunctionJde)
+{
+    bool found = false;
+    double bestDistance = std::numeric_limits<double>::infinity();
+    for (double offset = -16.0; offset <= 16.0; offset += 4.0)
+    {
+        double candidate = 0.0;
+        if (!findNearestConjunction(core, solarSystem, sun, moon, earth,
+                                    currentJde + offset, candidate))
+            continue;
+        const double distance = std::abs(candidate - currentJde);
+        if (distance < bestDistance)
+        {
+            bestDistance = distance;
+            conjunctionJde = candidate;
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool findPrecedingConjunction(StelCore* core, SolarSystem* solarSystem,
+                              const PlanetP& sun, const PlanetP& moon,
+                              const PlanetP& earth, double currentJde,
+                              double& conjunctionJde)
+{
+    double nearestJde = 0.0;
+    if (!findConjunctionFromAnyPhase(core, solarSystem, sun, moon, earth,
+                                     currentJde, nearestJde))
+        return false;
+    std::optional<double> previousJde;
+    if (nearestJde > currentJde)
+    {
+        double value = 0.0;
+        if (findAdjacentConjunction(core, solarSystem, sun, moon, earth,
+                                    nearestJde, -1, value))
+            previousJde = value;
+    }
+    const auto selected = VisibilityMath::selectPrecedingConjunction(
+        currentJde, nearestJde, previousJde);
+    if (!selected)
+        return false;
+    conjunctionJde = *selected;
+    return true;
+}
+
+bool findTopocentricConjunction(StelCore* core, SolarSystem* solarSystem,
+                                const PlanetP& sun, const PlanetP& moon,
+                                const PlanetP& earth,
+                                double geocentricConjunctionJde,
+                                double& topocentricConjunctionJde)
+{
+    if (!core || !std::isfinite(geocentricConjunctionJde))
+        return false;
+    const StelLocation& location = core->getCurrentLocation();
+    const double latitude = location.getLatitude();
+    const double longitude = location.getLongitude();
+    const int altitude = location.altitude;
+    if (latitude != topocentricCacheLatitude
+        || longitude != topocentricCacheLongitude
+        || altitude != topocentricCacheAltitude)
+    {
+        apparentTopocentricConjunctionCache.clear();
+        topocentricCacheLatitude = latitude;
+        topocentricCacheLongitude = longitude;
+        topocentricCacheAltitude = altitude;
+    }
+    for (const auto& cached : apparentTopocentricConjunctionCache)
+    {
+        if (std::abs(cached.geocentricJde - geocentricConjunctionJde) < 1e-6
+            && cached.latitude == latitude
+            && cached.longitude == longitude
+            && cached.altitude == altitude)
+        {
+            topocentricConjunctionJde = cached.topocentricJde;
+            return true;
+        }
+    }
+
+    const auto geometricSeed = VisibilityMath::refineWrappedLongitudeRoot(
+        [core, &moon, &earth](double jde)
+        {
+            return topocentricGeometricLongitudeDifference(
+                core, moon, earth, jde);
+        },
+        geocentricConjunctionJde, 0.25);
+    if (!geometricSeed
+        || !refineApparentConjunction(core, solarSystem, sun, moon, earth,
+                                      *geometricSeed, true,
+                                      topocentricConjunctionJde))
+        return false;
+
+    apparentTopocentricConjunctionCache.push_back(
+        {geocentricConjunctionJde, latitude, longitude, altitude,
+         topocentricConjunctionJde});
+    if (apparentTopocentricConjunctionCache.size() > 64)
+        apparentTopocentricConjunctionCache.erase(
+            apparentTopocentricConjunctionCache.begin());
+    return true;
 }
 
 std::optional<ObservationalGeometry> observationalGeometryAtJd(
@@ -343,10 +670,18 @@ std::optional<ObservationalGeometry> observationalGeometryAtJd(
         return std::nullopt;
 
     const Mat4d vsopToAltAz = altAzToVsop.transpose();
-    const double moonAltitudeDeg = altitudeRad(
-        vsopToAltAz.multiplyWithoutTranslation(moonTopo)) * RAD2DEG;
-    const double sunAltitudeDeg = altitudeRad(
-        vsopToAltAz.multiplyWithoutTranslation(sunTopo)) * RAD2DEG;
+    const Vec3d moonAltAz =
+        vsopToAltAz.multiplyWithoutTranslation(moonTopo);
+    const Vec3d sunAltAz =
+        vsopToAltAz.multiplyWithoutTranslation(sunTopo);
+    double moonAzimuthRad = 0.0;
+    double moonAltitudeRad = 0.0;
+    double sunAzimuthRad = 0.0;
+    double sunAltitudeRad = 0.0;
+    StelUtils::rectToSphe(&moonAzimuthRad, &moonAltitudeRad, moonAltAz);
+    StelUtils::rectToSphe(&sunAzimuthRad, &sunAltitudeRad, sunAltAz);
+    const double moonAltitudeDeg = moonAltitudeRad * RAD2DEG;
+    const double sunAltitudeDeg = sunAltitudeRad * RAD2DEG;
 
     const Vec3d moonHelio = earthHelio + moonGeo;
     const Vec3d observerHelio = earthHelio + observerVsop;
@@ -364,13 +699,19 @@ std::optional<ObservationalGeometry> observationalGeometryAtJd(
         0.5 * std::abs(1.0 + cosPhaseAngle);
     const double diameterDeg = 2.0 * std::atan2(
         moon->getEquatorialRadius(), std::sqrt(observerMoonRq)) * RAD2DEG;
-    const double v = VisibilityMath::odehValue(
-        moonAltitudeDeg - sunAltitudeDeg,
-        VisibilityMath::illuminatedWidth(
-            illuminatedFraction, diameterDeg));
-    if (!std::isfinite(moonAltitudeDeg) || !std::isfinite(v))
+    const double arcvDeg = moonAltitudeDeg - sunAltitudeDeg;
+    const double dazDeg = VisibilityMath::signedAngleDifferenceDeg(
+        moonAzimuthRad * RAD2DEG, sunAzimuthRad * RAD2DEG);
+    const double widthArcmin = VisibilityMath::illuminatedWidth(
+        illuminatedFraction, diameterDeg);
+    const double v = VisibilityMath::odehValue(arcvDeg, widthArcmin);
+    if (!std::isfinite(moonAltitudeDeg)
+        || !std::isfinite(sunAltitudeDeg)
+        || !std::isfinite(arcvDeg) || !std::isfinite(dazDeg)
+        || !std::isfinite(widthArcmin) || !std::isfinite(v))
         return std::nullopt;
-    return ObservationalGeometry{moonAltitudeDeg, v};
+    return ObservationalGeometry{moonAltitudeDeg, sunAltitudeDeg, arcvDeg,
+                                 dazDeg, widthArcmin, v};
 }
 
 double observationalVAtJd(StelCore* core, const PlanetP& moon,
@@ -806,10 +1147,14 @@ VisibilityContours::VisibilityContours()
     , cachedBestAltitude(std::numeric_limits<int>::min())
     , cachedEveningJd(std::numeric_limits<double>::quiet_NaN())
     , cachedEveningV(std::numeric_limits<double>::quiet_NaN())
+    , cachedEveningLagDays(std::numeric_limits<double>::quiet_NaN())
     , cachedMorningJd(std::numeric_limits<double>::quiet_NaN())
     , cachedMorningV(std::numeric_limits<double>::quiet_NaN())
+    , cachedMorningLagDays(std::numeric_limits<double>::quiet_NaN())
     , cachedEveningAvailable(false)
     , cachedMorningAvailable(false)
+    , cachedEveningLagAvailable(false)
+    , cachedMorningLagAvailable(false)
     , cachedBestJd(std::numeric_limits<double>::quiet_NaN())
     , cachedBestV(std::numeric_limits<double>::quiet_NaN())
     , cachedBestAvailable(false)
@@ -1009,7 +1354,8 @@ void VisibilityContours::addMoonInformation(StelCore* core)
         {
             double precedingConjunctionJde = 0.0;
             const bool havePrecedingConjunction = findPrecedingConjunction(
-                moon, earth, currentJde, precedingConjunctionJde);
+                core, solarSystem, sun, moon, earth, currentJde,
+                precedingConjunctionJde);
             const bool sameConjunctionCache = havePrecedingConjunction
             && std::isfinite(cachedHijriEventsConjunctionJde)
             && std::abs(precedingConjunctionJde
@@ -1022,7 +1368,8 @@ void VisibilityContours::addMoonInformation(StelCore* core)
                 {
                     double previousConjunctionJde = 0.0;
                     if (findAdjacentConjunction(
-                            moon, earth, precedingConjunctionJde, -1,
+                            core, solarSystem, sun, moon, earth,
+                            precedingConjunctionJde, -1,
                             previousConjunctionJde))
                     {
                         auto previousEvents =
@@ -1055,7 +1402,8 @@ void VisibilityContours::addMoonInformation(StelCore* core)
             cachedHijriEventsNextConjunctionJde =
                 havePrecedingConjunction
                 && findAdjacentConjunction(
-                    moon, earth, precedingConjunctionJde, 1,
+                    core, solarSystem, sun, moon, earth,
+                    precedingConjunctionJde, 1,
                     nextConjunctionJde)
                     ? nextConjunctionJde
                     : std::numeric_limits<double>::quiet_NaN();
@@ -1083,13 +1431,19 @@ void VisibilityContours::addMoonInformation(StelCore* core)
     if (navigatorShown && navigatorDialog)
         navigatorDialog->setObservationalHijriDate(hijriDateText);
 
+    const auto ltrValue = [](const QString& value)
+    {
+        return QStringLiteral("<span dir=\"ltr\">%1</span>").arg(value);
+    };
     const auto addHijriInformation = [&]()
     {
         if (cachedHijriAvailable)
         {
             moon->addToExtraInfoString(
                 StelObject::OtherCoord,
-                tr("Hijri date: %1<br/>").arg(hijriDateText));
+                tr("Hijri date: %1<br/>")
+                    .arg(QStringLiteral("<b>%1</b>")
+                             .arg(ltrValue(hijriDateText))));
         }
         else
         {
@@ -1099,15 +1453,18 @@ void VisibilityContours::addMoonInformation(StelCore* core)
         }
     };
 
-    const double moonAltitudeDeg =
-        altitudeRad(moon->getAltAzPosGeometric(core)) * RAD2DEG;
-    if (VisibilityMath::moonIsUp(moonAltitudeDeg)
-        && (!std::isfinite(cachedInformationForJDE)
-            || std::abs(currentJde - cachedInformationForJDE) > 0.20))
+    const auto currentGeometry = observationalGeometryAtJd(
+        core, moon, earth, currentJd);
+    const double moonAltitudeDeg = currentGeometry
+        ? currentGeometry->moonAltitudeDeg
+        : altitudeRad(moon->getAltAzPosGeometric(core)) * RAD2DEG;
+    if (!std::isfinite(cachedInformationForJDE)
+        || std::abs(currentJde - cachedInformationForJDE) > 0.20)
     {
         double conjunctionJde = 0.0;
-        if (findConjunctionFromAnyPhase(moon, earth, currentJde,
-                                        conjunctionJde))
+        if (findConjunctionFromAnyPhase(
+                core, solarSystem, sun, moon, earth, currentJde,
+                conjunctionJde))
             cachedInformationConjunctionJDE = conjunctionJde;
         else
             cachedInformationConjunctionJDE =
@@ -1115,24 +1472,104 @@ void VisibilityContours::addMoonInformation(StelCore* core)
         cachedInformationForJDE = currentJde;
     }
 
-    if (!VisibilityMath::moonInformationAvailable(
+    const bool informationAvailable =
+        VisibilityMath::moonInformationAvailable(
             moonAltitudeDeg, currentJde,
-            cachedInformationConjunctionJDE))
+            cachedInformationConjunctionJDE);
+    const auto addMoonParametersHeading = [&]()
     {
-        moon->addToExtraInfoString(StelObject::OtherCoord,
-                                   tr("V now: -<br/>"));
-        moon->addToExtraInfoString(StelObject::OtherCoord,
-                                   tr("Best time: -<br/>"));
-        moon->addToExtraInfoString(StelObject::OtherCoord,
-                                   tr("V at best time: -<br/>"));
-        addHijriInformation();
-        return;
-    }
+        moon->addToExtraInfoString(
+            StelObject::OtherCoord,
+            QStringLiteral("<b>%1</b><br/>")
+                .arg(tr("Moon visibility parameters")));
+    };
 
-    const double vNow = observationalVAtJd(
-        core, moon, earth, core->getJD());
-    moon->addToExtraInfoString(StelObject::OtherCoord,
-        tr("V now: %1<br/>").arg(vNow, 0, 'f', 2));
+    const auto addMoonParameters = [&](const std::optional<bool>& useEvening)
+    {
+        const QString width = currentGeometry
+            ? QString::number(
+                  VisibilityMath::arcminutesToArcseconds(
+                      currentGeometry->widthArcmin), 'f', 2)
+                  + QStringLiteral("″")
+            : QStringLiteral("-");
+        moon->addToExtraInfoString(
+            StelObject::OtherCoord,
+            tr("Width W: %1<br/>").arg(ltrValue(width)));
+
+        const QString arcv = informationAvailable && currentGeometry
+            ? QString::number(currentGeometry->arcvDeg, 'f', 2)
+                  + QStringLiteral("°")
+            : QStringLiteral("-");
+        const QString daz = informationAvailable && currentGeometry
+            ? QString::number(currentGeometry->dazDeg, 'f', 2)
+                  + QStringLiteral("°")
+            : QStringLiteral("-");
+        moon->addToExtraInfoString(
+            StelObject::OtherCoord,
+            tr("ARCV: %1<br/>").arg(ltrValue(arcv)));
+        moon->addToExtraInfoString(
+            StelObject::OtherCoord,
+            tr("DAZ: %1<br/>").arg(ltrValue(daz)));
+
+        if (useEvening)
+        {
+            const bool lagAvailable = *useEvening
+                ? cachedEveningLagAvailable
+                : cachedMorningLagAvailable;
+            const double lagDays = *useEvening
+                ? cachedEveningLagDays
+                : cachedMorningLagDays;
+            const QString lag = informationAvailable && lagAvailable
+                ? QString::fromStdString(
+                      VisibilityMath::formatSignedDuration(lagDays))
+                : QStringLiteral("-");
+            moon->addToExtraInfoString(
+                StelObject::OtherCoord,
+                (*useEvening ? tr("Evening lag: %1<br/>")
+                             : tr("Morning lag: %1<br/>"))
+                    .arg(ltrValue(lag)));
+        }
+
+        QString geocentricAge = QStringLiteral("-");
+        QString topocentricAge = QStringLiteral("-");
+        if (std::isfinite(cachedInformationConjunctionJDE))
+        {
+            geocentricAge = QString::fromStdString(
+                VisibilityMath::formatConjunctionAge(
+                    currentJde - cachedInformationConjunctionJDE));
+            double topocentricConjunctionJde = 0.0;
+            if (findTopocentricConjunction(
+                    core, solarSystem, sun, moon, earth,
+                    cachedInformationConjunctionJDE,
+                    topocentricConjunctionJde))
+            {
+                topocentricAge = QString::fromStdString(
+                    VisibilityMath::formatConjunctionAge(
+                        currentJde - topocentricConjunctionJde));
+            }
+        }
+        moon->addToExtraInfoString(
+            StelObject::OtherCoord,
+            tr("Age from (Geo) Conjunction: %1<br/>")
+                .arg(ltrValue(geocentricAge)));
+        moon->addToExtraInfoString(
+            StelObject::OtherCoord,
+            tr("Age from (Topo) Conjunction: %1<br/>")
+                .arg(ltrValue(topocentricAge)));
+
+        const double deltaT = core->computeDeltaT(currentJd);
+        const QString deltaTText = std::isfinite(deltaT)
+            ? QString::number(deltaT, 'f', 2)
+            : QStringLiteral("-");
+        moon->addToExtraInfoString(
+            StelObject::OtherCoord,
+            tr("ΔT (TT−UT1): %1 s<br/>")
+                .arg(ltrValue(deltaTText)));
+    };
+
+    const double vNow = currentGeometry
+        ? currentGeometry->v
+        : observationalVAtJd(core, moon, earth, currentJd);
 
     const double localDay = std::floor(
         core->getJD() + core->getUTCOffset(core->getJD()) / 24.0 + 0.5);
@@ -1148,6 +1585,15 @@ void VisibilityContours::addMoonInformation(StelCore* core)
             core, VisibilityMath::CONVENTIONAL_SUN_CENTER_ALTITUDE_DEG);
         const Vec4d moonRts = moon->getRTSTime(
             core, MOON_GEOMETRIC_HORIZON_EPSILON_DEG);
+
+        cachedEveningLagAvailable = validSet(sunRts) && validSet(moonRts);
+        cachedMorningLagAvailable = validRise(sunRts) && validRise(moonRts);
+        cachedEveningLagDays = cachedEveningLagAvailable
+            ? moonRts[2] - sunRts[2]
+            : std::numeric_limits<double>::quiet_NaN();
+        cachedMorningLagDays = cachedMorningLagAvailable
+            ? sunRts[0] - moonRts[0]
+            : std::numeric_limits<double>::quiet_NaN();
 
         std::optional<double> evening;
         std::optional<double> morning;
@@ -1184,12 +1630,32 @@ void VisibilityContours::addMoonInformation(StelCore* core)
                                               : std::nullopt;
     const std::optional<double> best = VisibilityMath::nearestTime(core->getJD(), evening, morning);
     cachedBestAvailable = best.has_value();
+    std::optional<bool> bestUsesEvening;
     if (best)
     {
         const bool useEvening = cachedEveningAvailable && *best == cachedEveningJd;
+        bestUsesEvening = useEvening;
         cachedBestJd = *best;
         cachedBestV = useEvening ? cachedEveningV : cachedMorningV;
     }
+
+    addHijriInformation();
+    addMoonParametersHeading();
+
+    if (!informationAvailable)
+    {
+        moon->addToExtraInfoString(StelObject::OtherCoord,
+                                   tr("V now: -<br/>"));
+        moon->addToExtraInfoString(StelObject::OtherCoord,
+                                   tr("Best time: -<br/>"));
+        moon->addToExtraInfoString(StelObject::OtherCoord,
+                                   tr("V at best time: -<br/>"));
+        addMoonParameters(bestUsesEvening);
+        return;
+    }
+
+    moon->addToExtraInfoString(StelObject::OtherCoord,
+        tr("V now: %1<br/>").arg(vNow, 0, 'f', 2));
 
     if (!cachedBestAvailable)
     {
@@ -1197,7 +1663,7 @@ void VisibilityContours::addMoonInformation(StelCore* core)
                                   tr("Best time: Not available<br/>"));
         moon->addToExtraInfoString(StelObject::OtherCoord,
                                   tr("V at best time: Not available<br/>"));
-        addHijriInformation();
+        addMoonParameters(bestUsesEvening);
         return;
     }
 
@@ -1208,7 +1674,7 @@ void VisibilityContours::addMoonInformation(StelCore* core)
                               tr("Best time: %1<br/>").arg(localTime));
     moon->addToExtraInfoString(StelObject::OtherCoord,
                               tr("V at best time: %1<br/>").arg(cachedBestV, 0, 'f', 2));
-    addHijriInformation();
+    addMoonParameters(bestUsesEvening);
 }
 
 void VisibilityContours::navigateForward()
@@ -1270,7 +1736,9 @@ void VisibilityContours::navigateToCrescent(
 
     const double currentJd = core->getJD();
     double conjunctionJde = 0.0;
-    if (!findConjunctionFromAnyPhase(moon, earth, core->getJDE(), conjunctionJde))
+    if (!findConjunctionFromAnyPhase(
+            core, solarSystem, sun, moon, earth, core->getJDE(),
+            conjunctionJde))
     {
         navigatorDialog->setStatusMessage(
             CrescentNavigatorDialog::StatusMessage::NotFound);
@@ -1289,8 +1757,9 @@ void VisibilityContours::navigateToCrescent(
             break;
 
         double adjacentJde = 0.0;
-        if (!findAdjacentConjunction(moon, earth, conjunctionJde,
-                                     direction, adjacentJde))
+        if (!findAdjacentConjunction(
+                core, solarSystem, sun, moon, earth, conjunctionJde,
+                direction, adjacentJde))
             break;
         conjunctionJde = adjacentJde;
     }
@@ -1333,8 +1802,6 @@ void VisibilityContours::navigateToCrescent(
     int day = 0;
     StelUtils::getDateFromJulianDay(destination->jd + utcOffset / 24.0,
                                     &year, &month, &day);
-    const QString localTime = QString::fromStdString(
-        VisibilityMath::formatLocalTime(destination->jd, utcOffset));
     const QString localDate = QStringLiteral("%1-%2-%3")
                                   .arg(year, 4, 10, QLatin1Char('0'))
                                   .arg(month, 2, 10, QLatin1Char('0'))
@@ -1344,7 +1811,7 @@ void VisibilityContours::navigateToCrescent(
     const bool gregorianCalendar =
         VisibilityMath::isGregorianCalendarDate(year, month, day);
     navigatorDialog->setEventStatus(destination->kind, destination->dayIndex,
-                                    localDate, localTime, gregorianCalendar,
+                                    localDate, gregorianCalendar,
                                     destination->basis,
                                     hijri ? hijri->year : 0,
                                     hijri ? hijri->month : 0);
@@ -1418,13 +1885,14 @@ void VisibilityContours::draw(StelCore* core)
     if (sunAltDeg > VisibilityMath::CONVENTIONAL_SUN_CENTER_ALTITUDE_DEG)
         return;
 
-    // Determine true time offset from the nearest geocentric longitude conjunction,
-    // using Stellarium's position functions at arbitrary JDE.
+    // Determine the signed offset from the nearest apparent geocentric
+    // longitude conjunction in the true ecliptic/equinox of date.
     const double jde = core->getJDE();
     if (!std::isfinite(cachedForJDE) || std::abs(jde - cachedForJDE) > 0.20)
     {
         double conjunction = 0.0;
-        if (findNearestConjunction(moon, earth, jde, conjunction))
+        if (findNearestConjunction(
+                core, solarSystem, sun, moon, earth, jde, conjunction))
             cachedConjunctionJDE = conjunction;
         else
             cachedConjunctionJDE = std::numeric_limits<double>::quiet_NaN();
@@ -1614,12 +2082,20 @@ void VisibilityContours::draw(StelCore* core)
     for (const VisibilityBand& band : bands)
         drawContour(band.lowerV, band.color);
 
-    // Status label close to the Sun; useful for checking the automatic day filter.
+    // Signed continuous age from the apparent geocentric conjunction.
+    QString conjunctionAge = QString::fromStdString(
+        VisibilityMath::formatConjunctionAge(daysFromConjunction));
+    const QString language =
+        StelApp::getInstance().getLocaleMgr().getAppLanguage();
+    if (VisibilityMath::useArabicForProgramLanguage(language.toStdString()))
+    {
+        // Keep the sign, Western numerals, and h/m suffixes in LTR order
+        // inside the surrounding Arabic sentence.
+        conjunctionAge = QStringLiteral("\u2066%1\u2069").arg(conjunctionAge);
+    }
     painter.setColor(1.0f, 1.0f, 1.0f, 0.90f);
     painter.drawText(sunAltAz,
-                     tr("Conjunction day %1   Δ=%2 d")
-                         .arg(dayIndex >= 0 ? QString("+%1").arg(dayIndex)
-                                            : QString::number(dayIndex))
-                         .arg(daysFromConjunction, 0, 'f', 2),
+                     tr("Age from (Geo) Conjunction = %1")
+                         .arg(conjunctionAge),
                      0.0f, 10.0f, -18.0f, true);
 }

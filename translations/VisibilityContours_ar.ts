@@ -253,8 +253,44 @@
    <translation>التاريخ الهجري: غير متاح&lt;br/&gt;</translation>
   </message>
   <message>
-   <source>Conjunction day %1   Δ=%2 d</source>
-   <translation>يوم الاقتران %1   Δ=%2 يوم</translation>
+   <source>Moon visibility parameters</source>
+   <translation>حدود رؤية القمر</translation>
+  </message>
+  <message>
+   <source>Width W: %1&lt;br/&gt;</source>
+   <translation>العرض W: %1&lt;br/&gt;</translation>
+  </message>
+  <message>
+   <source>ARCV: %1&lt;br/&gt;</source>
+   <translation>ARCV: %1&lt;br/&gt;</translation>
+  </message>
+  <message>
+   <source>DAZ: %1&lt;br/&gt;</source>
+   <translation>DAZ: %1&lt;br/&gt;</translation>
+  </message>
+  <message>
+   <source>Morning lag: %1&lt;br/&gt;</source>
+   <translation>مكث الصباح: %1&lt;br/&gt;</translation>
+  </message>
+  <message>
+   <source>Evening lag: %1&lt;br/&gt;</source>
+   <translation>مكث المساء: %1&lt;br/&gt;</translation>
+  </message>
+  <message>
+   <source>Age from (Geo) Conjunction: %1&lt;br/&gt;</source>
+   <translation>العمر من الاقتران المركزي: %1&lt;br/&gt;</translation>
+  </message>
+  <message>
+   <source>Age from (Topo) Conjunction: %1&lt;br/&gt;</source>
+   <translation>العمر من الاقتران السطحي: %1&lt;br/&gt;</translation>
+  </message>
+  <message>
+   <source>ΔT (TT−UT1): %1 s&lt;br/&gt;</source>
+   <translation>ΔT (TT−UT1): %1 s&lt;br/&gt;</translation>
+  </message>
+  <message>
+   <source>Age from (Geo) Conjunction = %1</source>
+   <translation>العمر من الاقتران المركزي = %1</translation>
   </message>
  </context>
 </TS>

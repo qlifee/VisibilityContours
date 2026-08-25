@@ -53,6 +53,7 @@ void CrescentNavigatorDialog::createDialogContent()
 {
     ui->setupUi(dialog);
     dialog->installEventFilter(this);
+    applyTextContrast();
     updateHijriHeadingFont();
     hoverTooltip = new QLabel(dialog);
     hoverTooltip->setObjectName(QStringLiteral("visibilityContoursHoverTooltip"));
@@ -236,8 +237,7 @@ void CrescentNavigatorDialog::setStatusMessage(StatusMessage message)
 
 void CrescentNavigatorDialog::setEventStatus(
     VisibilityMath::CrescentEventKind kind, int dayIndex,
-    const QString& localDate, const QString& localTime,
-    bool gregorianCalendar,
+    const QString& localDate, bool gregorianCalendar,
     VisibilityMath::EventTimeBasis basis, int hijriYear, int hijriMonth)
 {
     pendingIsEvent = true;
@@ -245,7 +245,6 @@ void CrescentNavigatorDialog::setEventStatus(
     pendingEventBasis = basis;
     pendingDayIndex = dayIndex;
     pendingLocalDate = localDate;
-    pendingLocalTime = localTime;
     pendingGregorianCalendar = gregorianCalendar;
     pendingObservationalHijriDate.clear();
     pendingObservationalHijriResolved = false;
@@ -288,6 +287,27 @@ void CrescentNavigatorDialog::retranslate()
         updateEventFilterDirection();
         applyStatus();
     }
+}
+
+void CrescentNavigatorDialog::applyTextContrast()
+{
+    if (!dialog)
+        return;
+
+    const QString whiteText = QStringLiteral("color: rgb(255, 255, 255);");
+    ui->hijriLabel->setStyleSheet(whiteText);
+    ui->statusLabel->setStyleSheet(whiteText);
+    ui->timeLabel->setStyleSheet(whiteText);
+    ui->navigateLabel->setStyleSheet(whiteText);
+    ui->moonUpOnlyLabel->setStyleSheet(whiteText);
+    ui->allEventsLabel->setStyleSheet(whiteText);
+    ui->bothRadio->setStyleSheet(whiteText);
+    ui->morningRadio->setStyleSheet(whiteText);
+    ui->eveningRadio->setStyleSheet(whiteText);
+
+    if (QLabel* title = ui->titleBar->findChild<QLabel*>(
+            QStringLiteral("stelWindowTitle")))
+        title->setStyleSheet(whiteText);
 }
 
 void CrescentNavigatorDialog::updateHijriHeadingFont()
@@ -401,10 +421,9 @@ void CrescentNavigatorDialog::applyStatus()
                                        : tr("Julian date:");
         QString dateLines =
             QStringLiteral("<div dir=\"%1\"><b>%2 "
-                           "<span dir=\"ltr\">%3 %4</span></b></div>")
+                           "<span dir=\"ltr\">%3</span></b></div>")
                 .arg(direction, civilLabel.toHtmlEscaped(),
-                     pendingLocalDate.toHtmlEscaped(),
-                     pendingLocalTime.toHtmlEscaped());
+                     pendingLocalDate.toHtmlEscaped());
         if (pendingObservationalHijriResolved)
         {
             const QString hijriDate = pendingObservationalHijriDate.isEmpty()
