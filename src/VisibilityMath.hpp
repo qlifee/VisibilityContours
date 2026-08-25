@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -131,12 +132,20 @@ double odehPolynomial(double widthArcmin);
 double odehValue(double arcvDeg, double widthArcmin);
 double theoreticalWidth(double arcvDeg, double dazDeg);
 double illuminatedWidth(double illuminatedFraction, double angularDiameterDeg);
+double arcminutesToArcseconds(double arcminutes);
+double signedAngleDifferenceDeg(double firstDeg, double secondDeg);
 double horizontalParallaxDeg(double moonDistanceAu, double earthRadiusAu);
 double yallopBoundaryAsOdehV(double q, double horizontalParallaxDeg);
 std::array<double, 4> yallopBoundaries(double horizontalParallaxDeg);
 std::array<double, 4> fallbackYallopBoundaries();
 int categoryIndex(double value, const double* lowerBoundaries, std::size_t count);
 std::string formatLocalTime(double jd, double utcOffsetHours);
+std::string formatSignedDuration(double days);
+std::string formatConjunctionAge(double daysFromConjunction);
+std::optional<double> refineWrappedLongitudeRoot(
+    const std::function<double(double)>& longitudeDifference,
+    double seed, double maximumHalfSpanDays = 0.5,
+    double toleranceDays = 0.05 / 86400.0);
 
 std::optional<double> eveningBestTime(double sunsetJd, double moonsetJd);
 std::optional<double> morningBestTime(double sunriseJd, double moonriseJd);

@@ -454,6 +454,25 @@ double illuminatedWidth(double illuminatedFraction, double angularDiameterDeg)
            * std::max(0.0, angularDiameterDeg) * 60.0;
 }
 
+double arcminutesToArcseconds(double arcminutes)
+{
+    return std::isfinite(arcminutes)
+               ? arcminutes * 60.0
+               : std::numeric_limits<double>::quiet_NaN();
+}
+
+double signedAngleDifferenceDeg(double firstDeg, double secondDeg)
+{
+    if (!std::isfinite(firstDeg) || !std::isfinite(secondDeg))
+        return std::numeric_limits<double>::quiet_NaN();
+    double difference = std::fmod(firstDeg - secondDeg, 360.0);
+    if (difference <= -180.0)
+        difference += 360.0;
+    else if (difference > 180.0)
+        difference -= 360.0;
+    return difference;
+}
+
 double horizontalParallaxDeg(double moonDistanceAu, double earthRadiusAu)
 {
     if (!(moonDistanceAu > 0.0) || !(earthRadiusAu > 0.0)
@@ -515,6 +534,102 @@ std::string formatLocalTime(double jd, double utcOffsetHours)
     output << hours << 'h' << std::setfill('0') << std::setw(2) << minutes
            << 'm' << std::setw(2) << remainingSeconds << 's';
     return output.str();
+}
+
+std::string formatSignedDuration(double days)
+{
+    const double durationMinutes = days * 1440.0;
+    if (!std::isfinite(durationMinutes)
+        || durationMinutes
+               > static_cast<double>(std::numeric_limits<long long>::max())
+        || durationMinutes
+               < static_cast<double>(std::numeric_limits<long long>::min()))
+        return {};
+
+    const long long signedMinutes = std::llround(durationMinutes);
+    const bool negative = signedMinutes < 0;
+    const unsigned long long absoluteMinutes = negative
+        ? static_cast<unsigned long long>(-(signedMinutes + 1)) + 1ULL
+        : static_cast<unsigned long long>(signedMinutes);
+    const unsigned long long hours = absoluteMinutes / 60ULL;
+    const unsigned long long minutes = absoluteMinutes % 60ULL;
+
+    std::ostringstream output;
+    output << (negative ? '-' : '+') << hours << 'h'
+           << std::setfill('0') << std::setw(2) << minutes << 'm';
+    return output.str();
+}
+
+std::string formatConjunctionAge(double daysFromConjunction)
+{
+    return formatSignedDuration(daysFromConjunction);
+}
+
+std::optional<double> refineWrappedLongitudeRoot(
+    const std::function<double(double)>& longitudeDifference,
+    double seed, double maximumHalfSpanDays, double toleranceDays)
+{
+    if (!longitudeDifference || !std::isfinite(seed)
+        || !(maximumHalfSpanDays > 0.0) || !(toleranceDays > 0.0))
+        return std::nullopt;
+
+    const double centerValue = longitudeDifference(seed);
+    if (!std::isfinite(centerValue))
+        return std::nullopt;
+    if (std::abs(centerValue) < 1e-14)
+        return seed;
+
+    constexpr double PI = 3.141592653589793238462643383279502884;
+    double halfSpan = std::min(1.0 / 1440.0, maximumHalfSpanDays);
+    double lo = seed;
+    double hi = seed;
+    double flo = centerValue;
+    double fhi = centerValue;
+    bool bracketed = false;
+
+    while (halfSpan <= maximumHalfSpanDays + 1e-15)
+    {
+        lo = seed - halfSpan;
+        hi = seed + halfSpan;
+        flo = longitudeDifference(lo);
+        fhi = longitudeDifference(hi);
+        if (!std::isfinite(flo) || !std::isfinite(fhi))
+            return std::nullopt;
+        // A conjunction crosses zero continuously. A difference close to 2pi
+        // is the wrapped discontinuity at opposition and is not a root.
+        if (std::abs(fhi - flo) < PI && flo * fhi <= 0.0)
+        {
+            bracketed = true;
+            break;
+        }
+        if (halfSpan >= maximumHalfSpanDays)
+            break;
+        halfSpan = std::min(maximumHalfSpanDays, halfSpan * 2.0);
+    }
+
+    if (!bracketed)
+        return std::nullopt;
+
+    while (hi - lo > toleranceDays)
+    {
+        const double mid = 0.5 * (lo + hi);
+        const double fm = longitudeDifference(mid);
+        if (!std::isfinite(fm))
+            return std::nullopt;
+        if (std::abs(fm) < 1e-14)
+            return mid;
+        if (flo * fm <= 0.0)
+        {
+            hi = mid;
+            fhi = fm;
+        }
+        else
+        {
+            lo = mid;
+            flo = fm;
+        }
+    }
+    return 0.5 * (lo + hi);
 }
 
 std::optional<double> eveningBestTime(double sunsetJd, double moonsetJd)
