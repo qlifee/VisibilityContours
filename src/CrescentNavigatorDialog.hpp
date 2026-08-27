@@ -28,10 +28,10 @@ public:
 
     void setStatusMessage(StatusMessage message);
     void setEventStatus(VisibilityMath::CrescentEventKind kind,
-                        int dayIndex, const QString& localDate,
-                        bool gregorianCalendar, VisibilityMath::EventTimeBasis basis,
+                        const QString& localDate, bool gregorianCalendar,
                         int hijriYear, int hijriMonth);
-    void setObservationalHijriDate(const QString& date);
+    void setObservationalHijriResult(
+        const VisibilityMath::ObservationalHijriResult& result);
     void setNavigationEnabled(bool enabled);
 
 public slots:
@@ -48,6 +48,7 @@ private:
     void showButtonTooltip(QPushButton* button, const QPoint& buttonPosition);
     void applyTextContrast();
     void updateHijriHeadingFont();
+    void updateDynamicHeaderGeometry();
     void updateEventFilterDirection();
     void updateEventFilterControls(const QString& value);
     QString hijriMonthName(int month) const;
@@ -58,11 +59,9 @@ private:
     StatusMessage pendingMessage;
     bool pendingIsEvent;
     VisibilityMath::CrescentEventKind pendingEventKind;
-    VisibilityMath::EventTimeBasis pendingEventBasis;
-    int pendingDayIndex;
     QString pendingLocalDate;
     bool pendingGregorianCalendar;
-    QString pendingObservationalHijriDate;
+    VisibilityMath::ObservationalHijriResult pendingObservationalHijriResult;
     bool pendingObservationalHijriResolved;
     int pendingHijriYear;
     int pendingHijriMonth;

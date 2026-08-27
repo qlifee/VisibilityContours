@@ -1,8 +1,10 @@
 #include "VisibilityMath.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <string>
 
 namespace
@@ -81,70 +83,9 @@ int main()
     assert(sameHijriDate(rabiAkhir1, {1448, 4, 1}));
     assert(!sameHijriDate(rabiAkhir1, rabiAwwal30));
 
-    assert(sameHijriDate(
-        advanceHijriDateAtSunset({1448, 3, 27}, true),
-        HijriDate{1448, 3, 28}));
-    assert(sameHijriDate(
-        advanceHijriDateAtSunset({1448, 3, 28}, true),
-        rabiAkhir1));
-    assert(sameHijriDate(
-        advanceHijriDateAtSunset({1448, 3, 29}, false),
-        rabiAwwal30));
-    assert(sameHijriDate(
-        advanceHijriDateAtSunset(rabiAwwal30, false),
-        rabiAkhir1));
-    assert(sameHijriDate(
-        advanceHijriDateAtSunset({1447, 12, 30}, false),
-        HijriDate{1448, 1, 1}));
-    assert(sameHijriDate(
-        advanceHijriDateAtSunset({-1, 12, 30}, false),
-        HijriDate{1, 1, 1}));
-    assert(!validHijriDate(
-        advanceHijriDateAtSunset({1448, 0, 1}, false)));
-
-    const ObservationalHijriDate aligned{{1448, 3, 30},
-                                         {1448, 3, 30}};
-    const auto belowCalculated = advanceObservationalHijriAtSunset(
-        aligned, HIJRI_CALCULATED_START_V - 1e-9);
-    assert(sameHijriDate(belowCalculated.calculated, rabiAkhir1));
-    assert(sameHijriDate(belowCalculated.observed, rabiAkhir1));
-
-    const ObservationalHijriDate lowerBoundaryState{{1448, 3, 29},
-                                                     {1448, 3, 29}};
-    const auto lowerBoundaryBelow = advanceObservationalHijriAtSunset(
-        lowerBoundaryState, HIJRI_CALCULATED_START_V - 1e-9);
-    assert(sameHijriDate(lowerBoundaryBelow.calculated, rabiAwwal30));
-    assert(sameHijriDate(lowerBoundaryBelow.observed, rabiAwwal30));
-
-    const auto calculatedOnly = advanceObservationalHijriAtSunset(
-        lowerBoundaryState, HIJRI_CALCULATED_START_V);
-    assert(sameHijriDate(calculatedOnly.calculated, rabiAkhir1));
-    assert(sameHijriDate(calculatedOnly.observed, rabiAwwal30));
-    assert(formatObservationalHijriDate(calculatedOnly)
-           == "01/04/1448 - 30/03/1448");
-
-    const auto calculatedOnlyUpperEdge = advanceObservationalHijriAtSunset(
-        lowerBoundaryState, HIJRI_OBSERVED_START_V - 1e-9);
-    assert(sameHijriDate(calculatedOnlyUpperEdge.calculated, rabiAkhir1));
-    assert(sameHijriDate(calculatedOnlyUpperEdge.observed, rabiAwwal30));
-
-    const auto bothCriteria = advanceObservationalHijriAtSunset(
-        lowerBoundaryState, HIJRI_OBSERVED_START_V);
-    assert(sameHijriDate(bothCriteria.calculated, rabiAkhir1));
-    assert(sameHijriDate(bothCriteria.observed, rabiAkhir1));
-    assert(formatObservationalHijriDate(bothCriteria) == "01/04/1448");
-
-    const auto aboveObserved = advanceObservationalHijriAtSunset(
-        lowerBoundaryState, HIJRI_OBSERVED_START_V + 1e-9);
-    assert(sameHijriDate(aboveObserved.calculated, rabiAkhir1));
-    assert(sameHijriDate(aboveObserved.observed, rabiAkhir1));
-
-    const auto advancedRange = advanceObservationalHijriAtSunset(
-        calculatedOnly, std::nullopt);
-    assert(sameHijriDate(advancedRange.calculated,
-                         HijriDate{1448, 4, 2}));
-    assert(sameHijriDate(advancedRange.observed, rabiAkhir1));
-    assert(formatObservationalHijriDate(advancedRange)
+    const ObservationalHijriDate formattedRange{{1448, 4, 2},
+                                                 {1448, 4, 1}};
+    assert(formatObservationalHijriDate(formattedRange)
            == "02/04/1448 - 01/04/1448");
     assert(formatHijriDate({1448, 4, 1}) == "01/04/1448");
     assert(formatHijriDate({-54, 1, 1}) == "01/01/-0054");
@@ -154,8 +95,7 @@ int main()
     assert(sunsetHasOccurred(100.0 + 1e-9, 100.0));
     assert(!sunsetHasOccurred(std::nan(""), 100.0));
 
-    assert(!hijriMonthStartEligible(27));
-    assert(hijriMonthStartEligible(28));
+    assert(!hijriMonthStartEligible(28));
     assert(hijriMonthStartEligible(29));
     assert(hijriMonthStartEligible(30));
     assert(!hijriMonthStartEligible(31));
@@ -174,6 +114,47 @@ int main()
     assert(!lunationCacheCoversJde(
         110.0, 100.0, std::nan("")));
 
+    const double justBelow45 = std::nextafter(45.0, 44.0);
+    const double justAbove45 = std::nextafter(45.0, 46.0);
+    const double justBelow59 = std::nextafter(59.0, 58.0);
+    const double justAbove59 = std::nextafter(59.0, 60.0);
+    const double justBelow60 = std::nextafter(60.0, 59.0);
+    const double justAbove60 = std::nextafter(60.0, 61.0);
+    assert(hijriLatitudePolicy(55.0) == HijriLatitudePolicy::Standard);
+    assert(hijriLatitudePolicy(-55.0) == HijriLatitudePolicy::Standard);
+    assert(hijriLatitudePolicy(std::nextafter(55.0, 56.0))
+           == HijriLatitudePolicy::FollowLowerLatitude);
+    assert(hijriLatitudePolicy(-60.0)
+           == HijriLatitudePolicy::FollowLowerLatitude);
+    assert(hijriLatitudePolicy(justAbove60)
+           == HijriLatitudePolicy::Unsupported);
+    assert(hijriLatitudePolicy(std::nan(""))
+           == HijriLatitudePolicy::Unsupported);
+    assert(hijriMaximumConjunctionBin(justBelow45) == 3);
+    assert(hijriMaximumConjunctionBin(-justBelow45) == 3);
+    assert(hijriMaximumConjunctionBin(45.0) == 3);
+    assert(hijriMaximumConjunctionBin(-45.0) == 3);
+    assert(hijriMaximumConjunctionBin(justAbove45) == 4);
+    assert(hijriMaximumConjunctionBin(-justAbove45) == 4);
+    assert(hijriMaximumConjunctionBin(justBelow59) == 4);
+    assert(hijriMaximumConjunctionBin(-justBelow59) == 4);
+    assert(hijriMaximumConjunctionBin(59.0) == 5);
+    assert(hijriMaximumConjunctionBin(-59.0) == 5);
+    assert(hijriMaximumConjunctionBin(justAbove59) == 5);
+    assert(hijriMaximumConjunctionBin(-justAbove59) == 5);
+    assert(hijriMaximumConjunctionBin(justBelow60) == 5);
+    assert(hijriMaximumConjunctionBin(-justBelow60) == 5);
+    assert(hijriMaximumConjunctionBin(60.0) == 5);
+    assert(hijriMaximumConjunctionBin(-60.0) == 5);
+    assert(!hijriMaximumConjunctionBin(justAbove60));
+    assert(!hijriMaximumConjunctionBin(-justAbove60));
+    assert(!hijriMaximumConjunctionBin(std::nan("")));
+    assert(!hijriEventInLatitudeWindow(4, 45.0));
+    assert(hijriEventInLatitudeWindow(4, justAbove45));
+    assert(!hijriEventInLatitudeWindow(5, justBelow59));
+    assert(hijriEventInLatitudeWindow(5, 59.0));
+    assert(!hijriEventInLatitudeWindow(6, 60.0));
+
     const auto hijriEvent = [](
         long long localDay, int year, int month, int day,
         double conjunctionJde, double sunsetJd, double bestTimeJde,
@@ -184,84 +165,297 @@ int main()
             sunsetJd, bestTimeJde, bestTimeJde, dayIndex, v};
     };
 
-    const std::vector<HijriVisibilityEvent> dohaHistory = {
-        hijriEvent(100, 2026, 7, 15, 99.5, 100.70, 100.75, 1, 6.00),
-        hijriEvent(101, 2026, 7, 16, 99.5, 101.70, 101.75, 2, 10.00),
-        hijriEvent(129, 2026, 8, 13, 128.5, 129.70, 129.75, 1, 2.05),
-        hijriEvent(130, 2026, 8, 14, 128.5, 130.70, 130.75, 2, 15.92),
-        hijriEvent(131, 2026, 8, 15, 128.5, 131.70, 131.75, 3, 31.57)
+    const std::vector<HijriLunationEvents> dohaHistory = {
+        {99.5, {
+            hijriEvent(100, 2026, 7, 15, 99.5, 100.70, 100.75, 1, 6.00),
+            hijriEvent(101, 2026, 7, 16, 99.5, 101.70, 101.75, 2, 10.00)}},
+        {128.5, {
+            hijriEvent(129, 2026, 8, 13, 128.5, 129.70, 129.75, 1, 2.05),
+            hijriEvent(130, 2026, 8, 14, 128.5, 130.70, 130.75, 2, 15.92),
+            hijriEvent(131, 2026, 8, 15, 128.5, 131.70, 131.75, 3, 31.57)}}
     };
     const auto dohaAugust13 = observationalHijriFromLunationEvents(
-        dohaHistory, 129, 129.71, 94.71);
+        dohaHistory, 129, 129.71, 25.0);
     const auto dohaAugust14 = observationalHijriFromLunationEvents(
-        dohaHistory, 130, 130.71, 95.71);
+        dohaHistory, 130, 130.71, 25.0);
     const auto dohaAugust15 = observationalHijriFromLunationEvents(
-        dohaHistory, 131, 131.71, 96.71);
-    assert(dohaAugust13 && formatObservationalHijriDate(*dohaAugust13)
-                              == "01/03/1448 - 30/02/1448");
-    assert(dohaAugust14 && formatObservationalHijriDate(*dohaAugust14)
-                              == "02/03/1448 - 01/03/1448");
-    assert(dohaAugust15 && formatObservationalHijriDate(*dohaAugust15)
-                              == "03/03/1448 - 02/03/1448");
-    assert(!observationalHijriFromLunationEvents(
-        {hijriEvent(129, 2026, 8, 13, 128.5,
-                    129.70, 129.75, 1, 2.05)},
-        129, 129.71, 94.71));
+        dohaHistory, 131, 131.71, 25.0);
+    assert(observationalHijriAvailable(dohaAugust13));
+    assert(formatObservationalHijriDate(dohaAugust13.date)
+           == "01/03/1448 - 30/02/1448");
+    assert(observationalHijriAvailable(dohaAugust14));
+    assert(formatObservationalHijriDate(dohaAugust14.date)
+           == "02/03/1448 - 01/03/1448");
+    assert(observationalHijriAvailable(dohaAugust15));
+    assert(formatObservationalHijriDate(dohaAugust15.date)
+           == "03/03/1448 - 02/03/1448");
+    auto reversedDohaHistory = dohaHistory;
+    std::reverse(reversedDohaHistory.begin(), reversedDohaHistory.end());
+    const auto reversedDoha = observationalHijriFromLunationEvents(
+        reversedDohaHistory, 131, 131.71, 25.0);
+    assert(observationalHijriAvailable(reversedDoha));
+    assert(formatObservationalHijriDate(reversedDoha.date)
+           == "03/03/1448 - 02/03/1448");
+    const auto dohaAnchorCoverage = hijriHistoryAnchorCoverage(
+        dohaHistory, 129.71, 25.0);
+    assert(dohaAnchorCoverage[0] && dohaAnchorCoverage[1]);
+    const auto missingObservedAnchor = observationalHijriFromLunationEvents(
+        {{128.5, {hijriEvent(129, 2026, 8, 13, 128.5,
+                            129.70, 129.75, 1, 2.05)}}},
+        129, 129.71, 25.0);
+    assert(missingObservedAnchor.availability
+           == HijriAvailabilityReason::HistoryUnavailable);
 
     // The lower track may start in bin 0 while the stricter track continues
     // to bin +1. Both results become active at their event's sunset.
-    const std::vector<HijriVisibilityEvent> independentCrossings = {
-        hijriEvent(100, 2026, 7, 15, 99.5, 100.70, 100.75, 1, 6.00),
-        hijriEvent(128, 2026, 8, 12, 128.4, 128.70, 128.75, 0, 2.00),
-        hijriEvent(129, 2026, 8, 13, 128.4, 129.70, 129.75, 1, 6.00)
+    const std::vector<HijriLunationEvents> independentCrossings = {
+        {99.5, {hijriEvent(100, 2026, 7, 15, 99.5,
+                          100.70, 100.75, 1, 6.00)}},
+        {128.4, {
+            hijriEvent(128, 2026, 8, 12, 128.4, 128.70, 128.75, 0, 2.00),
+            hijriEvent(129, 2026, 8, 13, 128.4, 129.70, 129.75, 1, 6.00)}}
     };
     const auto independent = observationalHijriFromLunationEvents(
-        independentCrossings, 129, 129.71, 94.71);
-    assert(independent && independent->calculated.day == 2
-           && independent->observed.day == 1);
+        independentCrossings, 129, 129.71, 25.0);
+    assert(observationalHijriAvailable(independent));
+    assert(independent.date.calculated.day == 1);
+    assert(independent.date.observed.day == 1);
+    assert(independent.calculatedPrematureStart);
+    assert(!independent.observedPrematureStart);
 
     // A rounded bin-0 event before conjunction is not a waxing-crescent start.
-    assert(!observationalHijriFromLunationEvents(
-        {hijriEvent(100, 2026, 7, 15, 100.0,
-                    100.70, 99.90, 0, 20.0)},
-        100, 100.71, 65.71));
+    const auto preConjunction = observationalHijriFromLunationEvents(
+        {{100.0, {hijriEvent(100, 2026, 7, 15, 100.0,
+                            100.70, 99.90, 0, 20.0)}}},
+        100, 100.71, 25.0);
+    assert(preConjunction.availability
+           == HijriAvailabilityReason::HistoryUnavailable);
 
-    // A qualifying day-27 event is skipped; day 28 starts the month, and a
-    // later qualifying event in the same lunation does not restart it.
-    const std::vector<HijriVisibilityEvent> earlyCrossing = {
-        hijriEvent(100, 2026, 7, 15, 99.5, 100.70, 100.75, 1, 6.00),
-        hijriEvent(126, 2026, 8, 10, 126.4, 126.70, 126.75, 0, 6.00),
-        hijriEvent(127, 2026, 8, 11, 126.4, 127.70, 127.75, 1, 6.00),
-        hijriEvent(128, 2026, 8, 12, 126.4, 128.70, 128.75, 2, 6.00)
+    // The first premature crossing consumes its lunation and schedules the
+    // compliant start after 29 complete days. Later crossings do not restart it.
+    const std::vector<HijriLunationEvents> earlyCrossing = {
+        {99.5, {hijriEvent(100, 2026, 7, 15, 99.5,
+                          100.70, 100.75, 1, 6.00)}},
+        {126.4, {
+            hijriEvent(126, 2026, 8, 10, 126.4, 126.70, 126.75, 0, 6.00),
+            hijriEvent(127, 2026, 8, 11, 126.4, 127.70, 127.75, 1, 6.00),
+            hijriEvent(128, 2026, 8, 12, 126.4, 128.70, 128.75, 2, 6.00)}}
     };
-    const auto afterLaterCrossing = observationalHijriFromLunationEvents(
-        earlyCrossing, 128, 128.71, 93.71);
-    assert(afterLaterCrossing
-           && afterLaterCrossing->calculated.day == 2
-           && afterLaterCrossing->observed.day == 2);
+    const auto beforeScheduledSunset = observationalHijriFromLunationEvents(
+        earlyCrossing, 128, 128.71, 25.0);
+    const auto atScheduledSunset = observationalHijriFromLunationEvents(
+        earlyCrossing, 129, 129.71, 25.0);
+    const auto afterScheduledSunset = observationalHijriFromLunationEvents(
+        earlyCrossing, 130, 130.71, 25.0);
+    assert(observationalHijriAvailable(beforeScheduledSunset));
+    assert(beforeScheduledSunset.date.calculated.day == 29);
+    assert(!beforeScheduledSunset.calculatedPrematureStart);
+    assert(beforeScheduledSunset.calculatedPrematureScheduled);
+    assert(observationalHijriAvailable(atScheduledSunset));
+    assert(atScheduledSunset.date.calculated.day == 1);
+    assert(atScheduledSunset.calculatedPrematureStart);
+    assert(afterScheduledSunset.date.calculated.day == 2);
+    assert(afterScheduledSunset.calculatedPrematureStart);
 
-    const auto beforeEligibleSunset = observationalHijriFromLunationEvents(
-        earlyCrossing, 126, 127.69, 92.69);
-    const auto afterEligibleSunset = observationalHijriFromLunationEvents(
-        earlyCrossing, 127, 127.71, 92.71);
-    assert(beforeEligibleSunset
-           && beforeEligibleSunset->calculated.day == 27);
-    assert(afterEligibleSunset
-           && afterEligibleSunset->calculated.day == 1);
+    // Every crossing after 1...28 completed days is deferred to the sunset
+    // completing 29 days. Crossings after 29 or 30 completed days start the
+    // next month immediately and are not marked premature.
+    for (int completedDays = 1; completedDays <= 28; ++completedDays)
+    {
+        const long long crossingDay = 100 + completedDays;
+        const double conjunction = crossingDay - 0.5;
+        const std::vector<HijriLunationEvents> history = {
+            {99.5, {hijriEvent(100, 2026, 7, 15, 99.5,
+                              100.70, 100.75, 1, 6.0)}},
+            {conjunction,
+             {hijriEvent(crossingDay, 2026, 8, 1,
+                         conjunction, crossingDay + 0.70,
+                         crossingDay + 0.75, 1, 6.0)}}};
+        const auto crossing = observationalHijriFromLunationEvents(
+            history, crossingDay, crossingDay + 0.71, 25.0);
+        assert(observationalHijriAvailable(crossing));
+        assert(crossing.date.calculated.day == completedDays + 1);
+        assert(crossing.calculatedPrematureScheduled);
+        assert(!crossing.calculatedPrematureStart);
+
+        const auto scheduled = observationalHijriFromLunationEvents(
+            history, 129, 129.71, 25.0);
+        assert(observationalHijriAvailable(scheduled));
+        assert(scheduled.date.calculated.day == 1);
+        assert(scheduled.calculatedPrematureStart);
+        assert(!scheduled.calculatedPrematureScheduled);
+    }
+    for (int completedDays : {29, 30})
+    {
+        const long long crossingDay = 100 + completedDays;
+        const double conjunction = crossingDay - 0.5;
+        const auto eligible = observationalHijriFromLunationEvents(
+            {{99.5, {hijriEvent(100, 2026, 7, 15, 99.5,
+                                100.70, 100.75, 1, 6.0)}},
+             {conjunction,
+              {hijriEvent(crossingDay, 2026, 8, 1,
+                          conjunction, crossingDay + 0.70,
+                          crossingDay + 0.75, 1, 6.0)}}},
+            crossingDay, crossingDay + 0.71, 25.0);
+        assert(observationalHijriAvailable(eligible));
+        assert(eligible.date.calculated.day == 1);
+        assert(!eligible.calculatedPrematureStart);
+        assert(!eligible.calculatedPrematureScheduled);
+    }
+
+    auto warningClearedHistory = earlyCrossing;
+    warningClearedHistory.push_back(
+        {157.4, {hijriEvent(158, 2026, 9, 9, 157.4,
+                           158.70, 158.75, 1, 6.00)}});
+    const auto warningCleared = observationalHijriFromLunationEvents(
+        warningClearedHistory, 158, 158.71, 25.0);
+    assert(observationalHijriAvailable(warningCleared));
+    assert(warningCleared.date.calculated.day == 1);
+    assert(!warningCleared.calculatedPrematureStart);
+
+    const std::vector<HijriLunationEvents> exactThresholds = {
+        {99.5, {hijriEvent(100, 2026, 7, 15, 99.5,
+                          100.70, 100.75, 1,
+                          HIJRI_OBSERVED_START_V)}},
+        {128.5, {hijriEvent(129, 2026, 8, 13, 128.5,
+                           129.70, 129.75, 1,
+                           HIJRI_CALCULATED_START_V)}}};
+    const auto exactLower = observationalHijriFromLunationEvents(
+        exactThresholds, 129, 129.71, 25.0);
+    assert(observationalHijriAvailable(exactLower));
+    assert(exactLower.date.calculated.day == 1);
+    assert(exactLower.date.observed.day == 30);
+    auto belowThresholds = exactThresholds;
+    belowThresholds[1].events[0].v =
+        std::nextafter(HIJRI_CALCULATED_START_V, 0.0);
+    const auto belowLower = observationalHijriFromLunationEvents(
+        belowThresholds, 129, 129.71, 25.0);
+    assert(observationalHijriAvailable(belowLower));
+    assert(belowLower.date.calculated.day == 30);
+    assert(belowLower.date.observed.day == 30);
 
     // With no accepted crossing, the next sunset after day 30 forces day 1.
     const auto forced = observationalHijriFromLunationEvents(
-        {hijriEvent(100, 2026, 7, 15, 99.5,
-                    100.70, 100.75, 1, 6.00)},
-        130, 130.71, 95.71);
-    assert(forced && forced->calculated.day == 1
-           && forced->observed.day == 1);
+        {{99.5, {hijriEvent(100, 2026, 7, 15, 99.5,
+                           100.70, 100.75, 1, 6.00)}},
+         {128.5, {}}},
+        130, 130.71, 25.0);
+    assert(observationalHijriAvailable(forced));
+    assert(forced.date.calculated.day == 1
+           && forced.date.observed.day == 1);
+    assert(!forced.calculatedPrematureStart);
 
-    // A synchronization event outside the preceding 35 days is unavailable.
-    assert(!observationalHijriFromLunationEvents(
-        {hijriEvent(100, 2026, 7, 15, 99.5,
-                    100.70, 100.75, 1, 6.00)},
-        136, 136.71, 101.71));
+    // A forced start consumes the lunation; its later crossing cannot restart it.
+    const auto forcedConsumesLunation = observationalHijriFromLunationEvents(
+        {{99.5, {hijriEvent(100, 2026, 7, 15, 99.5,
+                           100.70, 100.75, 1, 6.00)}},
+         {128.5, {hijriEvent(131, 2026, 8, 15, 128.5,
+                            131.70, 131.75, 3, 20.0)}}},
+        131, 131.71, 25.0);
+    assert(observationalHijriAvailable(forcedConsumesLunation));
+    assert(forcedConsumesLunation.date.calculated.day == 2);
+
+    // An active-lunation crossing is never allowed to synchronize itself.
+    // Replay must continue back through an empty preceding lunation to the
+    // older anchor, producing the same result whether opened before or after
+    // the active crossing.
+    const std::vector<HijriLunationEvents> olderAnchorHistory = {
+        {40.5, {hijriEvent(41, 2026, 5, 17, 40.5,
+                          41.70, 41.75, 1, 6.0)}},
+        {69.5, {}},
+        {98.5, {hijriEvent(99, 2026, 7, 14, 98.5,
+                          99.70, 99.75, 1, 6.0)}}};
+    const auto activeOnlyCoverage = hijriHistoryAnchorCoverage(
+        {{69.5, {}}, olderAnchorHistory.back()}, 99.71, 25.0);
+    assert(!activeOnlyCoverage[0] && !activeOnlyCoverage[1]);
+    const auto olderCoverage = hijriHistoryAnchorCoverage(
+        olderAnchorHistory, 99.71, 25.0);
+    assert(olderCoverage[0] && olderCoverage[1]);
+    const auto beforeDeferredStart = observationalHijriFromLunationEvents(
+        olderAnchorHistory, 99, 99.71, 25.0);
+    assert(observationalHijriAvailable(beforeDeferredStart));
+    assert(beforeDeferredStart.date.calculated.day == 29);
+    assert(beforeDeferredStart.calculatedPrematureScheduled);
+    assert(!beforeDeferredStart.calculatedPrematureStart);
+    const auto afterDeferredStart = observationalHijriFromLunationEvents(
+        olderAnchorHistory, 100, 100.71, 25.0);
+    assert(observationalHijriAvailable(afterDeferredStart));
+    assert(afterDeferredStart.date.calculated.day == 1);
+    assert(afterDeferredStart.calculatedPrematureStart);
+
+    // Exact adaptive-bin behavior remains separate from the normal -3...+3 gate.
+    const std::vector<HijriLunationEvents> binFourAnchor = {
+        {99.5, {hijriEvent(103, 2026, 7, 18, 99.5,
+                          103.70, 103.75, 4, 6.0)}},
+        {128.5, {}}};
+    assert(!observationalHijriAvailable(
+        observationalHijriFromLunationEvents(
+            binFourAnchor, 130, 130.71, 45.0)));
+    assert(observationalHijriAvailable(
+        observationalHijriFromLunationEvents(
+            binFourAnchor, 130, 130.71, justAbove45)));
+    const std::vector<HijriLunationEvents> binFiveAnchor = {
+        {99.5, {hijriEvent(104, 2026, 7, 19, 99.5,
+                          104.70, 104.75, 5, 6.0)}},
+        {128.5, {}}};
+    assert(!observationalHijriAvailable(
+        observationalHijriFromLunationEvents(
+            binFiveAnchor, 130, 130.71, justBelow59)));
+    assert(observationalHijriAvailable(
+        observationalHijriFromLunationEvents(
+            binFiveAnchor, 130, 130.71, 59.0)));
+    const auto unsupportedLatitude = observationalHijriFromLunationEvents(
+        binFiveAnchor, 130, 130.71, justAbove60);
+    assert(unsupportedLatitude.availability
+           == HijriAvailabilityReason::LatitudeUnsupported);
+
+    // The newest nine numerical lunations are the hard history limit.
+    std::vector<HijriLunationEvents> nineLunations;
+    nineLunations.push_back(
+        {99.5, {hijriEvent(100, 2026, 7, 15, 99.5,
+                           100.70, 100.75, 1, 6.0)}});
+    for (int index = 1; index < MAX_HIJRI_HISTORY_LUNATIONS; ++index)
+        nineLunations.push_back({99.5 + 29.5 * index, {}});
+    const auto ninthGroupAnchor = observationalHijriFromLunationEvents(
+        nineLunations, 336, 336.71, 25.0);
+    assert(observationalHijriAvailable(ninthGroupAnchor));
+    std::vector<HijriLunationEvents> tenLunations = nineLunations;
+    tenLunations.push_back({99.5 + 29.5 * MAX_HIJRI_HISTORY_LUNATIONS, {}});
+    const auto tenthGroupAnchor = observationalHijriFromLunationEvents(
+        tenLunations, 366, 366.71, 25.0);
+    assert(tenthGroupAnchor.availability
+           == HijriAvailabilityReason::HistoryUnavailable);
+
+    // Replay early, normal, missing-event, and normal lunations across every
+    // sunset and derive the actual starts from the displayed day number.
+    const std::vector<HijriLunationEvents> compliantHistory = {
+        {99.5, {hijriEvent(100, 2026, 7, 15, 99.5,
+                          100.70, 100.75, 1, 6.0)}},
+        {126.4, {hijriEvent(126, 2026, 8, 10, 126.4,
+                           126.70, 126.75, 0, 6.0)}},
+        {157.4, {hijriEvent(158, 2026, 9, 9, 157.4,
+                           158.70, 158.75, 1, 6.0)}},
+        {187.4, {}},
+        {216.4, {hijriEvent(217, 2026, 11, 7, 216.4,
+                           217.70, 217.75, 1, 6.0)}}};
+    std::vector<long long> actualStarts;
+    for (long long targetDay = 100; targetDay <= 217; ++targetDay)
+    {
+        const auto displayed = observationalHijriFromLunationEvents(
+            compliantHistory, targetDay,
+            static_cast<double>(targetDay) + 0.71, 25.0);
+        assert(observationalHijriAvailable(displayed));
+        if (displayed.date.calculated.day == 1)
+            actualStarts.push_back(targetDay);
+    }
+    const std::vector<long long> expectedStarts{100, 129, 158, 188, 217};
+    assert(actualStarts == expectedStarts);
+    for (std::size_t index = 1; index < actualStarts.size(); ++index)
+    {
+        const long long length = actualStarts[index]
+                                 - actualStarts[index - 1];
+        assert(length == 29 || length == 30);
+    }
 
     assert(close(CONVENTIONAL_SUN_CENTER_ALTITUDE_DEG, -0.8333));
     assert(close(theoreticalWidth(0.0, 0.0), 0.0));
@@ -394,6 +588,128 @@ int main()
     assert(!chooseNavigationTime(
         NavigationMode::MoonUpOrDown, CrescentEventKind::Evening,
         std::nan(""), std::nullopt, -1.0));
+
+    const auto assertIndices = [](const std::vector<std::size_t>& actual,
+                                  std::initializer_list<std::size_t> expected)
+    {
+        assert(actual == std::vector<std::size_t>(expected));
+    };
+    assertIndices(visibilityTransitionIndices(
+                      {0.5, 1.2, 1.35, 3.0, 5.83, 8.0},
+                      CrescentEventKind::Evening),
+                  {1, 2, 4});
+    assertIndices(visibilityTransitionIndices(
+                      {1.2, 6.0, 8.0}, CrescentEventKind::Evening),
+                  {0, 1});
+    assertIndices(visibilityTransitionIndices(
+                      {1.2, 5.83}, CrescentEventKind::Evening),
+                  {0, 1});
+    assert(visibilityTransitionIndices(
+               {5.83}, CrescentEventKind::Evening).empty());
+    assert(visibilityTransitionIndices(
+               {0.5, 1.35, 4.0}, CrescentEventKind::Evening).empty());
+    assert(visibilityTransitionIndices(
+               {2.0, 5.83}, CrescentEventKind::Evening).empty());
+    assert(visibilityTransitionIndices(
+               {0.5, 1.349999}, CrescentEventKind::Evening).empty());
+
+    assertIndices(visibilityTransitionIndices(
+                      {8.0, 6.0, 5.83, 4.0, 1.35, 1.34},
+                      CrescentEventKind::Morning),
+                  {2, 3, 5});
+    assertIndices(visibilityTransitionIndices(
+                      {6.0, 1.0}, CrescentEventKind::Morning),
+                  {0, 1});
+    assertIndices(visibilityTransitionIndices(
+                      {5.83, 1.34}, CrescentEventKind::Morning),
+                  {0, 1});
+    assert(visibilityTransitionIndices(
+               {1.34}, CrescentEventKind::Morning).empty());
+    assert(visibilityTransitionIndices(
+               {6.0, 4.0, 2.0}, CrescentEventKind::Morning).empty());
+    assert(visibilityTransitionIndices(
+               {6.0, 5.83}, CrescentEventKind::Morning).empty());
+    assert(visibilityTransitionIndices(
+               {4.0, 1.0}, CrescentEventKind::Morning).empty());
+
+    const std::optional<double> missingV;
+    assertIndices(visibilityTransitionIndices(
+                      {0.7, missingV, std::nan(""), 1.5,
+                       missingV, 5.9},
+                      CrescentEventKind::Evening),
+                  {0, 3, 5});
+    assertIndices(visibilityTransitionIndices(
+                      {6.0, missingV, std::nan(""), 4.0,
+                       missingV, 1.0},
+                      CrescentEventKind::Morning),
+                  {0, 3, 5});
+    assert(visibilityTransitionIndices(
+               {missingV, std::nan("")},
+               CrescentEventKind::Evening).empty());
+    assertIndices(visibilityTransitionIndices(
+                      {1.0, 2.0, 1.1, 6.0},
+                      CrescentEventKind::Evening),
+                  {0, 1, 3});
+    assertIndices(visibilityTransitionIndices(
+                      {6.0, 4.0, 6.2, 1.0},
+                      CrescentEventKind::Morning),
+                  {2, 3});
+    assert(visibilityTransitionIndices(
+               {1.0, 2.0}, CrescentEventKind::Evening,
+               std::nan(""), 5.83).empty());
+    assert(visibilityTransitionIndices(
+               {1.0, 2.0}, CrescentEventKind::Evening,
+               5.83, 1.35).empty());
+    assert(visibilityTransitionIndices(
+               {}, CrescentEventKind::Evening).empty());
+    assert(visibilityTransitionIndices(
+               {1.0, std::numeric_limits<double>::infinity(), 6.0},
+               CrescentEventKind::Evening)
+               == std::vector<std::size_t>({0, 2}));
+    assert(visibilityTransitionIndices(
+               {1.0, 2.0}, CrescentEventKind::Evening,
+               1.35, 1.35).empty());
+    assert(visibilityTransitionIndices(
+               {1.0, 2.0}, CrescentEventKind::Evening,
+               1.35, std::numeric_limits<double>::infinity()).empty());
+
+    std::vector<CrescentEvent> transitionEvents = {
+        {74.0, 70.0, 4, CrescentEventKind::Evening},
+        {97.0, 100.0, -3, CrescentEventKind::Morning},
+        {98.0, 100.0, -2, CrescentEventKind::Morning},
+        {99.0, 100.0, -1, CrescentEventKind::Morning},
+        {101.0, 100.0, 1, CrescentEventKind::Evening},
+        {102.0, 100.0, 2, CrescentEventKind::Evening},
+        {103.0, 100.0, 3, CrescentEventKind::Evening},
+        {126.0, 129.5, -4, CrescentEventKind::Morning}
+    };
+    sortCrescentEvents(transitionEvents);
+    assert(close(adjacentCrescentEvent(
+                     transitionEvents, 99.0, 1, EventFilter::Both)->jd,
+                 101.0));
+    assert(close(adjacentCrescentEvent(
+                     transitionEvents, 101.0, -1, EventFilter::Both)->jd,
+                 99.0));
+    assert(close(adjacentCrescentEvent(
+                     transitionEvents, 99.0, 1,
+                     EventFilter::Evening)->jd,
+                 101.0));
+    assert(close(adjacentCrescentEvent(
+                     transitionEvents, 101.0, -1,
+                     EventFilter::Morning)->jd,
+                 99.0));
+    assert(close(adjacentCrescentEvent(
+                     transitionEvents, 99.0, 1,
+                     EventFilter::Morning)->jd,
+                 126.0));
+    assert(close(adjacentCrescentEvent(
+                     transitionEvents, 101.0, -1,
+                     EventFilter::Evening)->jd,
+                 74.0));
+    assert(close(adjacentCrescentEvent(
+                     transitionEvents, 101.0 - 0.5 / 86400.0, 1,
+                     EventFilter::Evening)->jd,
+                 102.0));
 
     std::vector<CrescentEvent> events = {
         {101.75, 100.0, 2, CrescentEventKind::Evening},

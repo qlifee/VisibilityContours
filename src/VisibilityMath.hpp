@@ -17,6 +17,7 @@ constexpr double CONVENTIONAL_SUN_CENTER_ALTITUDE_DEG = -0.8333;
 constexpr double POST_SUNSET_NAVIGATION_MARGIN_DAYS = 5.0 / 86400.0;
 constexpr double HIJRI_CALCULATED_START_V = 1.35;
 constexpr double HIJRI_OBSERVED_START_V = 5.83;
+constexpr int MAX_HIJRI_HISTORY_LUNATIONS = 9;
 
 bool useArabicForProgramLanguage(const std::string& languageCode);
 bool isGregorianCalendarDate(int year, int month, int day);
@@ -82,6 +83,20 @@ struct ObservationalHijriDate
     HijriDate observed;
 };
 
+enum class HijriLatitudePolicy
+{
+    Standard,
+    FollowLowerLatitude,
+    Unsupported
+};
+
+enum class HijriAvailabilityReason
+{
+    Available,
+    HistoryUnavailable,
+    LatitudeUnsupported
+};
+
 struct HijriVisibilityEvent
 {
     long long localDay;
@@ -96,6 +111,24 @@ struct HijriVisibilityEvent
     double v;
 };
 
+struct HijriLunationEvents
+{
+    double conjunctionJde;
+    std::vector<HijriVisibilityEvent> events;
+};
+
+struct ObservationalHijriResult
+{
+    ObservationalHijriDate date{{0, 0, 0}, {0, 0, 0}};
+    HijriAvailabilityReason availability =
+        HijriAvailabilityReason::HistoryUnavailable;
+    HijriLatitudePolicy latitudePolicy = HijriLatitudePolicy::Standard;
+    bool calculatedPrematureStart = false;
+    bool observedPrematureStart = false;
+    bool calculatedPrematureScheduled = false;
+    bool observedPrematureScheduled = false;
+};
+
 EventFilter eventFilterFromString(const std::string& value);
 const char* eventFilterKey(EventFilter filter);
 const char* eventFilterName(EventFilter filter);
@@ -105,24 +138,29 @@ std::optional<HijriMonthYear> hijriMonthYearForEvent(
     CrescentEventKind kind);
 bool validHijriDate(const HijriDate& date);
 bool sameHijriDate(const HijriDate& first, const HijriDate& second);
-HijriDate advanceHijriDateAtSunset(const HijriDate& current,
-                                   bool criterionMet);
-ObservationalHijriDate advanceObservationalHijriAtSunset(
-    const ObservationalHijriDate& current,
-    const std::optional<double>& eveningBestTimeV);
 bool hijriMonthStartEligible(int currentDay);
 bool hijriForcedRolloverDue(long long monthStartLocalDay,
                             long long targetLocalDay);
+HijriLatitudePolicy hijriLatitudePolicy(double latitudeDeg);
+std::optional<int> hijriMaximumConjunctionBin(double latitudeDeg);
+bool hijriEventInLatitudeWindow(int dayIndex, double latitudeDeg);
+bool observationalHijriAvailable(const ObservationalHijriResult& result);
+bool sameObservationalHijriResult(
+    const ObservationalHijriResult& first,
+    const ObservationalHijriResult& second);
+std::array<bool, 2> hijriHistoryAnchorCoverage(
+    const std::vector<HijriLunationEvents>& lunations,
+    double currentJd, double latitudeDeg);
 std::optional<double> selectPrecedingConjunction(
     double currentJde, double nearestConjunctionJde,
     const std::optional<double>& previousConjunctionJde);
 bool lunationCacheCoversJde(double currentJde,
                             double conjunctionJde,
                             double nextConjunctionJde);
-std::optional<ObservationalHijriDate> observationalHijriFromLunationEvents(
-    const std::vector<HijriVisibilityEvent>& events,
+ObservationalHijriResult observationalHijriFromLunationEvents(
+    const std::vector<HijriLunationEvents>& lunations,
     long long currentSunsetDay, double currentJd,
-    double historyStartJd);
+    double latitudeDeg);
 std::string formatHijriDate(const HijriDate& date);
 std::string formatObservationalHijriDate(
     const ObservationalHijriDate& date);
@@ -162,6 +200,11 @@ bool validCrescentEvent(double eventJd, double eventJde, double conjunctionJde,
 std::optional<NavigationTime> chooseNavigationTime(
     NavigationMode mode, CrescentEventKind kind, double solarEventJd,
     const std::optional<double>& bestTimeJd, double bestTimeMoonAltitudeDeg);
+std::vector<std::size_t> visibilityTransitionIndices(
+    const std::vector<std::optional<double>>& chronologicalV,
+    CrescentEventKind kind,
+    double lowerV = HIJRI_CALCULATED_START_V,
+    double upperV = HIJRI_OBSERVED_START_V);
 void sortCrescentEvents(std::vector<CrescentEvent>& events);
 std::optional<CrescentEvent> adjacentCrescentEvent(
     const std::vector<CrescentEvent>& events, double currentJd,

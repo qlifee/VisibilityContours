@@ -1,12 +1,12 @@
 [English](README.md) | [العربية](README.ar.md)
 
-# VisibilityContours for Stellarium
+# Crescent Visibility & Hijri Date for Stellarium
 
 Standalone Stellarium plugin that draws selectable crescent-visibility bands
 around the Sun and adds observational visibility information when the Moon is
 selected.
 
-- Current version: **0.6.1**
+- Current version: **0.7.0**
 
 The Odeh scheme uses contiguous categories:
 
@@ -29,7 +29,8 @@ criterion. Users can switch to Odeh for the current session. All contour labels
 and information-panel values are equivalent Odeh V values, including when
 Yallop is selected.
 
-Open **Configuration window → Plugins → Visibility Contours → Configure** to
+Open **Configuration window → Plugins → Crescent Visibility & Hijri Date →
+Configure** to
 select Odeh or Yallop contours, control translucent band fills, and show the
 floating Moon Navigator. Band fills are enabled for new profiles; an explicitly
 saved fill setting and the navigator setting persist across restarts. The
@@ -110,23 +111,48 @@ If the selected Moon is at or below the airless geometric horizon, or the
 current time is outside conjunction-day bins `-3` through `+3`, all three
 plugin rows display `-` instead of observational values or a best time.
 
-The Hijri-date row remains available whenever the Moon is selected from an
-Earth location, including while those three observational rows display `-`.
-It advances at local sunset and follows two visibility tracks: a calculated
-track using `V ≥ 1.35` and an observed track using `V ≥ 5.83`. When both tracks
-agree it displays one date, for example `Hijri date: 01/04/1448`. When they
-differ it displays the calculated date first, for example
-`Hijri date: 01/04/1448 - 30/03/1448`. A month begins only from a valid evening
-best-time event. For each track, the plugin examines the preceding 35 days and
-finds the immediately preceding geocentric conjunction. It checks valid
-post-conjunction evenings chronologically in bins `0` through `+3`, retaining
-the first eligible crossing of each threshold independently. A crossing can
-start a month only when that track is on day 28, 29, or 30. Later qualifying
-evenings in the same lunation do not restart day 1. A track that has not begun
-a new month by day 30 advances at the next conventional sunset. The calculated
-lunation events are cached for responsive Moon navigation. If the required
-visibility history or sunset events cannot be constructed, the row displays
+The Hijri-date row is calculated independently of the three `-3…+3`-gated
+observational rows. It advances at local sunset and follows two visibility
+tracks: a calculated track using `V ≥ 1.35` and an observed track using
+`V ≥ 5.83`. When both tracks agree it displays one date, for example
+`Hijri date: 01/04/1448`. When they differ it displays the calculated date
+first, for example `Hijri date: 01/04/1448 - 30/03/1448`.
+
+For each numerical lunation and each threshold, the first qualifying valid
+evening best-time event is used. The Hijri-only post-conjunction search window
+adapts to absolute observer latitude:
+
+- `|latitude| ≤ 45°`: bins `0…+3`;
+- `45° < |latitude| < 59°`: bins `0…+4`;
+- `59° ≤ |latitude| ≤ 60°`: bins `0…+5`.
+
+These wider windows do not change the plugin's separate `-3…+3` contour and
+Moon-parameter windows. The Navigator's transition-only search is described
+below. Each displayed Hijri month is constrained
+to 29 or 30 days. A qualifying crossing after 29 or 30 completed days begins
+the new month at that sunset. An earlier crossing is recorded, but the start is
+deferred until the sunset completing 29 days. When this happens on the lower
+`V ≥ 1.35` track, the resulting month carries the warning
+`Possible premature start`. If no qualifying event occurs, the track is forced
+to the next month after 30 completed days. Missing Moonset,
+nonpositive lag, a Moon-down best time, or invalid geometry counts as an unmet
+criterion rather than making the calendar unavailable.
+
+The plugin starts from the immediately preceding apparent geocentric
+conjunction and lazily searches backward for synchronization anchors for both
+tracks, stopping after at most nine numerical lunations. It then replays the
+cached groups chronologically to the current sunset. The cache is specific to
+the active lunation, latitude, longitude, altitude, and timezone. If the
+required anchors or real sunset history cannot be constructed, the row displays
 `Hijri date: Not available`.
+
+The latitude display policy is:
+
+- `|latitude| ≤ 55°`: show the numeric observational date normally;
+- `55° < |latitude| ≤ 60°`: show the numeric date followed by
+  `Follow date of lower latitude.`;
+- `|latitude| > 60°`: do not calculate or substitute a proxy date; show
+  `Hijri date: Not available; follow date of lower latitude`.
 
 Sunrise and sunset use a geometric Sun-center altitude of `-0.8333°`, the
 conventional upper-limb sunrise/sunset threshold. Moonrise, Moonset, and the
@@ -165,43 +191,65 @@ Enable **Show Moon navigator** in the plugin configuration to open a movable
 panel with two previous/next button rows. The configuration window is also
 movable, and both windows remember their positions.
 
-The global **Navigate: Both | Morning | Evening** radio selector applies to
-both button rows. **Both** retains chronological morning/evening traversal,
-while **Morning** or **Evening** skips every event of the other kind. Changing
-the selector does not move Stellarium immediately; the next arrow click begins
-from the current Stellarium time. The selection is saved as
-`event_filter=both|morning|evening`, with **Both** used for a missing or invalid
-setting.
+The global **Navigate: Morning | Evening | Both** radio selector applies to
+both button rows. **Both** retains chronological traversal of the selected
+visibility landmarks, while **Morning** or **Evening** skips every landmark of
+the other kind. Changing the selector does not move Stellarium immediately;
+the next arrow click begins from the current Stellarium time. The selection is
+saved as `event_filter=both|morning|evening`, with **Both** used for a missing
+or invalid setting.
+
+The Navigator uses the fixed observational Odeh thresholds `1.35` and `5.83`,
+independently of the contour preset. It keeps two or three category landmarks
+for each morning or evening crescent associated with a conjunction:
+
+- Evening: the event immediately before the first upward crossing
+  (`V < 1.35`), the first event at or above `1.35`, and the first event at or
+  above `5.83`.
+- Morning: the event immediately before the final downward crossing nearest
+  conjunction (`V >= 5.83`), the first event below `5.83`, and the first event
+  below `1.35`.
+
+If one daily step crosses both thresholds, the two crossing landmarks are the
+same event and are shown only once, leaving two stops instead of three.
+If a complete bracketed sequence cannot be calculated, that morning or evening
+crescent is skipped rather than inventing a category landmark.
 
 - **Only Moon up** visits valid `4/9`-lag best times for which the Moon is
   strictly above the airless geometric horizon.
-- **Moon up or down** prefers that same best time when it is valid and the Moon
-  is up; otherwise it visits the corresponding conventional sunrise or sunset.
-  An evening sunset fallback lands five seconds after the calculated sunset so
-  the sunset-based Hijri date has already advanced.
+- **Moon up or down** also classifies a genuine positive-lag best time when the
+  Moon is geometrically down. It then visits the corresponding conventional
+  sunrise or sunset, and the Moon-information V rows remain `-`. An evening
+  sunset fallback lands five seconds after the calculated sunset so the
+  sunset-based Hijri date has already advanced.
 
-Forward selects the first qualifying event strictly after the current
-Stellarium time; Back selects the first strictly before it. Candidates are
-checked chronologically—morning, then evening, then the next morning—within
-conjunction days `-3` through `+3`. Invalid rise/set pairs, nonpositive Moon
-lags, polar failures, and missing sunrise/sunset events are skipped as
-appropriate for the selected row.
+Threshold classification always comes from a genuine `4/9` best time with a
+positive Moon lag, finite airless topocentric Odeh V, the correct side of
+conjunction, and illuminated fraction no greater than one half. Invalid
+rise/set pairs, nonpositive Moon lags, polar failures, and missing solar events
+are skipped; no V is invented at sunrise or sunset.
 
-If no qualifying event remains in the current conjunction window, navigation
+Forward selects the first landmark strictly after the current Stellarium time;
+Back selects the first strictly before it. To find rare high-latitude
+crossings, the Navigator alone examines up to ten rounded conjunction days on
+the relevant crescent side, but exposes only the two or three category
+landmarks above. The `-3…+3` gates used by contours and Moon information are
+unchanged.
+
+If no qualifying landmark remains in the current lunation, navigation
 continues into the adjacent lunation. At a selected event Stellarium pauses,
 selects and centers the Moon, enables tracking, and preserves the current field
-of view. The panel reports Morning or Evening, the conjunction-day bin, and
-the observer-local Gregorian or Julian date, with the observational Hijri date
-on a separate line beneath it. Both lines are bold; the event time remains
+of view. The panel reports the observer-local Gregorian or Julian date, with
+the observational Hijri date on a separate line beneath it. Both lines are
+bold; the event time remains
 visible in Stellarium's bottom clock. Navigator titles, labels, dates, and
 radio options are white for contrast, while button arrows and tooltips retain
-Stellarium's styling. The panel also reports whether the instant is a Best
-time, Sunrise, or Sunset. A successful jump enables and saves Stellarium's
+Stellarium's styling. A successful jump enables and saves Stellarium's
 standard selected-object marker and Solar System planet pointers, so the
 four-part rotating marker appears around the selected Moon. Navigation is
 available only for observers on Earth. Closing the panel disables its saved
-configuration checkbox. These are calculated Moon events; visiting one does
-not assert that the Moon has already reached a visible-crescent threshold.
+configuration checkbox. The pre-threshold landmark provides context and does
+not itself assert crescent visibility.
 
 After navigation, the panel also shows a bold Hijri month/year heading at 150%
 of the application font size. Morning events use the format
@@ -212,7 +260,11 @@ of the application font size. Morning events use the format
 The two bold date lines are explicitly labelled `Gregorian date:` or `Julian
 date:` according to Stellarium's historical calendar switch at 1582-10-15,
 and `Hijri date:`. Arabic uses right-to-left labelled lines while preserving
-the numeric dates in left-to-right order.
+the numeric dates in left-to-right order. The Navigator shows the same
+lower-latitude and possible-premature-start warnings as the Moon information
+panel. Above 60°, its arithmetic **Beginning/End of [Hijri month]** heading
+remains as event context, while the observational date is explicitly
+unavailable.
 
 ## Calculation references
 
@@ -251,8 +303,9 @@ curl -fL \
 ```
 
 Restart Stellarium after installation. The plugin starts automatically by
-default. If it does not, open **Configuration window → Plugins → Visibility
-Contours**, select **Load at startup**, and restart Stellarium again.
+default. If it does not, open **Configuration window → Plugins → Crescent
+Visibility & Hijri Date**, select **Load at startup**, and restart Stellarium
+again.
 
 To check the downloaded file against the checksum published in the release:
 
@@ -272,7 +325,7 @@ Release downloads and compatibility notes are available on the
 
 ### macOS 12+ — official Stellarium 26.2 Qt6 package
 
-The macOS v0.6.1 workflow targets only the unmodified official universal
+The macOS v0.7.0 workflow targets only the unmodified official universal
 `Stellarium-26.2-qt6-macOS.zip` application from stellarium.org. Its matching
 build inputs are Qt 6.9.3, Xcode 26.5 with Apple Clang 21, a macOS 12.0
 deployment target, and both `arm64` and `x86_64` slices. Qt5, Homebrew, and
@@ -280,26 +333,26 @@ other third-party Stellarium packages are not supported by this binary.
 
 The workflow verifies both architecture slices, deployment target, Qt plugin
 metadata, `@rpath` dependencies, unresolved Stellarium symbols, the official
-host's exported symbols, and its code-signing entitlements. The v0.6.1
+host's exported symbols, and its code-signing entitlements. The v0.7.0
 universal asset is CI built and inspected, Developer ID signed, and notarized
 by Apple. This version has not been runtime tested on macOS; both the `arm64`
 and `x86_64` slices are universal-binary and CI inspected only. Linux is the
-runtime-tested platform for v0.6.1.
+runtime-tested platform for v0.7.0.
 
 GitHub Actions also produces ad-hoc-signed acceptance artifacts for
 maintainers. Those test artifacts are not normal end-user downloads; install
 the signed and notarized asset from the Releases page.
 
-Install v0.6.1 for the current user with:
+Install v0.7.0 for the current user with:
 
 ```bash
-download_dir="$HOME/Downloads/VisibilityContours-0.6.1-macOS"
+download_dir="$HOME/Downloads/VisibilityContours-0.7.0-macOS"
 mkdir -p "$download_dir"
 curl -fL \
-  https://github.com/qlifee/VisibilityContours/releases/download/v0.6.1/VisibilityContours-0.6.1-Stellarium-26.2-macOS-universal.zip \
-  -o "$download_dir/VisibilityContours-0.6.1-Stellarium-26.2-macOS-universal.zip"
+  https://github.com/qlifee/VisibilityContours/releases/download/v0.7.0/VisibilityContours-0.7.0-Stellarium-26.2-macOS-universal.zip \
+  -o "$download_dir/VisibilityContours-0.7.0-Stellarium-26.2-macOS-universal.zip"
 ditto -x -k \
-  "$download_dir/VisibilityContours-0.6.1-Stellarium-26.2-macOS-universal.zip" \
+  "$download_dir/VisibilityContours-0.7.0-Stellarium-26.2-macOS-universal.zip" \
   "$download_dir/unpacked"
 mkdir -p "$HOME/Library/Application Support/Stellarium/modules/VisibilityContours"
 install -m 755 \

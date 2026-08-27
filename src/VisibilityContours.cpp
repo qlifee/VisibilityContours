@@ -58,8 +58,8 @@ constexpr double GREEN_BAND_UPPER_V = 27.0;
 constexpr double SYNODIC_MONTH_DAYS = 29.530588853;
 constexpr double LIGHT_SPEED_AU_PER_DAY = 173.1446326846693;
 constexpr int MAX_NAVIGATOR_LUNATIONS = 24;
+constexpr int NAVIGATOR_TRANSITION_HALF_SPAN_DAYS = 10;
 constexpr double NAVIGATION_EPSILON_DAYS = 1.0 / 86400.0;
-constexpr double HIJRI_HISTORY_DAYS = 35.0;
 
 struct Color
 {
@@ -244,6 +244,26 @@ struct ObservationalGeometry
     double dazDeg;
     double widthArcmin;
     double v;
+    double illuminatedFraction;
+};
+
+struct NavigatorVisibilitySample
+{
+    double solarEventJd;
+    double bestTimeJd;
+    double bestTimeJde;
+    double conjunctionJde;
+    int dayIndex;
+    VisibilityMath::CrescentEventKind kind;
+    double bestTimeMoonAltitudeDeg;
+    double v;
+};
+
+struct NavigatorSampleCacheEntry
+{
+    double conjunctionJde;
+    double deltaTSeconds;
+    std::vector<NavigatorVisibilitySample> samples;
 };
 
 double jdeForJd(StelCore* core, double jd)
@@ -321,9 +341,23 @@ struct TopocentricConjunctionCacheEntry
 std::vector<double> apparentGeocentricConjunctionCache;
 std::vector<TopocentricConjunctionCacheEntry>
     apparentTopocentricConjunctionCache;
+std::vector<NavigatorSampleCacheEntry> navigatorSampleCache;
 double topocentricCacheLatitude = std::numeric_limits<double>::quiet_NaN();
 double topocentricCacheLongitude = std::numeric_limits<double>::quiet_NaN();
 int topocentricCacheAltitude = std::numeric_limits<int>::min();
+double navigatorCacheLatitude = std::numeric_limits<double>::quiet_NaN();
+double navigatorCacheLongitude = std::numeric_limits<double>::quiet_NaN();
+int navigatorCacheAltitude = std::numeric_limits<int>::min();
+QString navigatorCacheTimeZone;
+
+void clearNavigatorSampleCache()
+{
+    navigatorSampleCache.clear();
+    navigatorCacheLatitude = std::numeric_limits<double>::quiet_NaN();
+    navigatorCacheLongitude = std::numeric_limits<double>::quiet_NaN();
+    navigatorCacheAltitude = std::numeric_limits<int>::min();
+    navigatorCacheTimeZone.clear();
+}
 
 void rememberGeocentricConjunction(double conjunctionJde)
 {
@@ -711,7 +745,8 @@ std::optional<ObservationalGeometry> observationalGeometryAtJd(
         || !std::isfinite(widthArcmin) || !std::isfinite(v))
         return std::nullopt;
     return ObservationalGeometry{moonAltitudeDeg, sunAltitudeDeg, arcvDeg,
-                                 dazDeg, widthArcmin, v};
+                                 dazDeg, widthArcmin, v,
+                                 illuminatedFraction};
 }
 
 double observationalVAtJd(StelCore* core, const PlanetP& moon,
@@ -773,7 +808,7 @@ struct SunsetInterval
 
 struct ObservationalHijriCalculation
 {
-    std::optional<VisibilityMath::ObservationalHijriDate> date;
+    VisibilityMath::ObservationalHijriResult result;
     double validFromJd;
     double validUntilJd;
 };
@@ -859,24 +894,25 @@ bool sunsetIntervalForJd(StelCore* core, const PlanetP& sun,
     return todaySunset > yesterdaySunset;
 }
 
-std::vector<VisibilityMath::HijriVisibilityEvent>
+VisibilityMath::HijriLunationEvents
 hijriVisibilityEventsForConjunction(
     StelCore* core, const PlanetP& sun, const PlanetP& moon,
-    const PlanetP& earth, double conjunctionJde)
+    const PlanetP& earth, double conjunctionJde, int maximumDayIndex)
 {
-    std::vector<VisibilityMath::HijriVisibilityEvent> events;
-    if (!core || !sun || !moon || !earth || !std::isfinite(conjunctionJde))
-        return events;
+    VisibilityMath::HijriLunationEvents lunation{conjunctionJde, {}};
+    if (!core || !sun || !moon || !earth || !std::isfinite(conjunctionJde)
+        || maximumDayIndex < 0)
+        return lunation;
 
     CoreTimeGuard restoreTime(core);
     const double conjunctionJd = jdForJde(core, conjunctionJde);
     LocalCivilDay conjunctionDay{};
     if (!localCivilDayForJd(core, conjunctionJd, conjunctionDay))
-        return events;
+        return lunation;
 
-    // The local day containing conjunction and the next four local days safely
-    // cover every post-conjunction best time in rounded bins 0 through +3.
-    for (int dayOffset = 0; dayOffset <= 4; ++dayOffset)
+    // One extra local day safely covers the UTC-offset edge of the final
+    // rounded post-conjunction bin.
+    for (int dayOffset = 0; dayOffset <= maximumDayIndex + 1; ++dayOffset)
     {
         const qint64 localDayNumber = conjunctionDay.number + dayOffset;
         const double referenceJd = referenceJdForLocalDay(
@@ -899,7 +935,8 @@ hijriVisibilityEventsForConjunction(
         const auto geometry = observationalGeometryAtJd(
             core, moon, earth, *bestTime);
         if (!geometry
-            || !VisibilityMath::moonIsUp(geometry->moonAltitudeDeg))
+            || !VisibilityMath::moonIsUp(geometry->moonAltitudeDeg)
+            || geometry->illuminatedFraction > 0.5)
             continue;
 
         const double eventJde = jdeForJd(core, *bestTime);
@@ -909,38 +946,50 @@ hijriVisibilityEventsForConjunction(
             eventJde, conjunctionJde);
         if (dayIndex < 0)
             continue;
-        if (dayIndex > 3)
+        if (dayIndex > maximumDayIndex)
             break;
 
         const LocalCivilDay localDay =
             localCivilDayFromNumber(localDayNumber);
-        events.push_back({localDay.number, localDay.year, localDay.month,
-                          localDay.day, conjunctionJde, sunRts[2],
-                          *bestTime, eventJde, dayIndex, geometry->v});
+        lunation.events.push_back(
+            {localDay.number, localDay.year, localDay.month,
+             localDay.day, conjunctionJde, sunRts[2],
+             *bestTime, eventJde, dayIndex, geometry->v});
     }
 
-    std::sort(events.begin(), events.end(),
+    std::sort(lunation.events.begin(), lunation.events.end(),
               [](const auto& first, const auto& second)
               {
                   return first.sunsetJd < second.sunsetJd;
               });
-    events.erase(std::unique(events.begin(), events.end(),
-                             [](const auto& first, const auto& second)
-                             {
-                                 return std::abs(first.sunsetJd
-                                                 - second.sunsetJd)
-                                        < NAVIGATION_EPSILON_DAYS;
-                             }),
-                 events.end());
-    return events;
+    lunation.events.erase(
+        std::unique(lunation.events.begin(), lunation.events.end(),
+                    [](const auto& first, const auto& second)
+                    {
+                        return std::abs(first.sunsetJd
+                                        - second.sunsetJd)
+                               < NAVIGATION_EPSILON_DAYS;
+                    }),
+        lunation.events.end());
+    return lunation;
 }
 
 ObservationalHijriCalculation calculateObservationalHijriDate(
     StelCore* core, const PlanetP& sun, double currentJd,
-    const std::vector<VisibilityMath::HijriVisibilityEvent>& events)
+    double latitudeDeg,
+    const std::vector<VisibilityMath::HijriLunationEvents>& lunations)
 {
     ObservationalHijriCalculation result{
-        std::nullopt, currentJd - 0.25, currentJd + 0.25};
+        {}, currentJd - 0.25, currentJd + 0.25};
+    result.result.latitudePolicy =
+        VisibilityMath::hijriLatitudePolicy(latitudeDeg);
+    if (result.result.latitudePolicy
+        == VisibilityMath::HijriLatitudePolicy::Unsupported)
+    {
+        result.result.availability =
+            VisibilityMath::HijriAvailabilityReason::LatitudeUnsupported;
+        return result;
+    }
     if (!core || !sun || !std::isfinite(currentJd))
         return result;
 
@@ -961,62 +1010,90 @@ ObservationalHijriCalculation calculateObservationalHijriDate(
     result.validFromJd = interval.previousSunsetJd;
     result.validUntilJd = interval.nextSunsetJd;
 
-    const double historyStartJd = currentJd - HIJRI_HISTORY_DAYS;
-    result.date = VisibilityMath::observationalHijriFromLunationEvents(
-        events, interval.previousSunsetDay.number, currentJd,
-        historyStartJd);
+    result.result = VisibilityMath::observationalHijriFromLunationEvents(
+        lunations, interval.previousSunsetDay.number, currentJd,
+        latitudeDeg);
     return result;
 }
 
-std::vector<VisibilityMath::CrescentEvent> crescentEventsForConjunction(
+std::vector<NavigatorVisibilitySample> navigatorSamplesForConjunction(
     StelCore* core, const PlanetP& sun, const PlanetP& moon,
-    double conjunctionJde, VisibilityMath::NavigationMode mode)
+    const PlanetP& earth, double conjunctionJde)
 {
-    std::vector<VisibilityMath::CrescentEvent> events;
-    if (!core || !sun || !moon || !std::isfinite(conjunctionJde))
-        return events;
+    std::vector<NavigatorVisibilitySample> samples;
+    if (!core || !sun || !moon || !earth || !std::isfinite(conjunctionJde))
+        return samples;
+
+    const double conjunctionJd = jdForJde(core, conjunctionJde);
+    const double deltaTSeconds = core->computeDeltaT(conjunctionJd);
+    const StelLocation& location = core->getCurrentLocation();
+    const QString timeZone = core->getCurrentTimeZone();
+    if (location.getLatitude() != navigatorCacheLatitude
+        || location.getLongitude() != navigatorCacheLongitude
+        || location.altitude != navigatorCacheAltitude
+        || timeZone != navigatorCacheTimeZone)
+    {
+        navigatorSampleCache.clear();
+        navigatorCacheLatitude = location.getLatitude();
+        navigatorCacheLongitude = location.getLongitude();
+        navigatorCacheAltitude = location.altitude;
+        navigatorCacheTimeZone = timeZone;
+    }
+    for (const auto& cached : navigatorSampleCache)
+    {
+        if (std::abs(cached.conjunctionJde - conjunctionJde) < 1e-6
+            && std::abs(cached.deltaTSeconds - deltaTSeconds) < 1e-6)
+            return cached.samples;
+    }
 
     CoreTimeGuard restoreTime(core);
-    const double jdeMinusJd = core->getJDE() - core->getJD();
-    const double conjunctionJd = conjunctionJde - jdeMinusJd;
-    const double conjunctionOffset = core->getUTCOffset(conjunctionJd) / 24.0;
-    const double conjunctionLocalDay =
-        std::floor(conjunctionJd + conjunctionOffset + 0.5);
+    LocalCivilDay conjunctionDay{};
+    if (!localCivilDayForJd(core, conjunctionJd, conjunctionDay))
+        return samples;
+
     auto appendEvent = [&](double solarEventJd,
                            const std::optional<double>& bestTime,
-                           VisibilityMath::CrescentEventKind kind,
-                           double referenceJd)
+                           VisibilityMath::CrescentEventKind kind)
     {
-        double bestTimeMoonAltitudeDeg = std::numeric_limits<double>::quiet_NaN();
-        if (bestTime)
-        {
-            core->setJD(*bestTime);
-            core->update(0.0);
-            bestTimeMoonAltitudeDeg =
-                altitudeRad(moon->getAltAzPosGeometric(core)) * RAD2DEG;
-            core->setJD(referenceJd);
-            core->update(0.0);
-        }
+        if (!bestTime)
+            return;
 
-        const auto navigationTime = VisibilityMath::chooseNavigationTime(
-            mode, kind, solarEventJd, bestTime, bestTimeMoonAltitudeDeg);
-        if (!navigationTime)
+        const auto geometry = observationalGeometryAtJd(
+            core, moon, earth, *bestTime);
+        if (!geometry || geometry->illuminatedFraction > 0.5)
             return;
-        const double eventJde = navigationTime->jd + jdeMinusJd;
-        if (!VisibilityMath::eventInConjunctionWindow(eventJde, conjunctionJde))
+
+        const double bestTimeJde = jdeForJd(core, *bestTime);
+        const bool correctConjunctionSide =
+            kind == VisibilityMath::CrescentEventKind::Morning
+                ? bestTimeJde < conjunctionJde
+                : bestTimeJde > conjunctionJde;
+        if (!correctConjunctionSide)
             return;
-        events.push_back({navigationTime->jd, conjunctionJde,
-                          VisibilityMath::conjunctionDayIndex(eventJde,
-                                                               conjunctionJde),
-                          kind, mode, navigationTime->basis});
+
+        const int dayIndex = VisibilityMath::conjunctionDayIndex(
+            bestTimeJde, conjunctionJde);
+        if (dayIndex < -NAVIGATOR_TRANSITION_HALF_SPAN_DAYS
+            || dayIndex > NAVIGATOR_TRANSITION_HALF_SPAN_DAYS)
+            return;
+
+        samples.push_back(
+            {solarEventJd, *bestTime, bestTimeJde, conjunctionJde,
+             dayIndex, kind, geometry->moonAltitudeDeg, geometry->v});
     };
 
-    // Eleven local days safely cover the seven conjunction bins at every UTC offset.
-    for (int dayOffset = -5; dayOffset <= 5; ++dayOffset)
+    // Two extra civil days cover UTC-offset edges of the rounded +/-10-day
+    // transition-search window. The half-illuminated phase filter below keeps
+    // the samples on the waning/waxing crescent halves of the lunation.
+    constexpr int LOCAL_DAY_MARGIN = 2;
+    for (int dayOffset =
+             -NAVIGATOR_TRANSITION_HALF_SPAN_DAYS - LOCAL_DAY_MARGIN;
+         dayOffset <=
+             NAVIGATOR_TRANSITION_HALF_SPAN_DAYS + LOCAL_DAY_MARGIN;
+         ++dayOffset)
     {
-        double referenceJd = conjunctionLocalDay + dayOffset - conjunctionOffset;
-        referenceJd = conjunctionLocalDay + dayOffset
-                      - core->getUTCOffset(referenceJd) / 24.0;
+        const double referenceJd = referenceJdForLocalDay(
+            core, conjunctionDay.number + dayOffset);
         core->setJD(referenceJd);
         core->update(0.0);
 
@@ -1034,17 +1111,90 @@ std::vector<VisibilityMath::CrescentEvent> crescentEventsForConjunction(
 
         if (validRise(sunRts))
             appendEvent(sunRts[0], morning,
-                        VisibilityMath::CrescentEventKind::Morning, referenceJd);
+                        VisibilityMath::CrescentEventKind::Morning);
         if (validSet(sunRts))
             appendEvent(sunRts[2], evening,
-                        VisibilityMath::CrescentEventKind::Evening, referenceJd);
+                        VisibilityMath::CrescentEventKind::Evening);
     }
 
+    std::sort(samples.begin(), samples.end(),
+              [](const auto& first, const auto& second)
+              {
+                  if (first.bestTimeJd != second.bestTimeJd)
+                      return first.bestTimeJd < second.bestTimeJd;
+                  return first.kind == VisibilityMath::CrescentEventKind::Morning
+                         && second.kind
+                                == VisibilityMath::CrescentEventKind::Evening;
+              });
+    samples.erase(
+        std::unique(samples.begin(), samples.end(),
+                    [](const auto& first, const auto& second)
+                    {
+                        return first.kind == second.kind
+                               && std::abs(first.bestTimeJd
+                                           - second.bestTimeJd)
+                                      < NAVIGATION_EPSILON_DAYS;
+                    }),
+        samples.end());
+
+    navigatorSampleCache.push_back(
+        {conjunctionJde, deltaTSeconds, samples});
+    if (navigatorSampleCache.size() > 48)
+        navigatorSampleCache.erase(navigatorSampleCache.begin());
+    return samples;
+}
+
+std::vector<VisibilityMath::CrescentEvent>
+crescentTransitionEventsForConjunction(
+    StelCore* core, const PlanetP& sun, const PlanetP& moon,
+    const PlanetP& earth, double conjunctionJde,
+    VisibilityMath::NavigationMode mode)
+{
+    const auto samples = navigatorSamplesForConjunction(
+        core, sun, moon, earth, conjunctionJde);
+    std::vector<VisibilityMath::CrescentEvent> events;
+
+    const auto appendKind = [&](VisibilityMath::CrescentEventKind kind)
+    {
+        std::vector<const NavigatorVisibilitySample*> kindSamples;
+        std::vector<std::optional<double>> values;
+        for (const auto& sample : samples)
+        {
+            if (sample.kind != kind)
+                continue;
+            kindSamples.push_back(&sample);
+            if (mode == VisibilityMath::NavigationMode::MoonUpOnly
+                && !VisibilityMath::moonIsUp(
+                    sample.bestTimeMoonAltitudeDeg))
+                values.push_back(std::nullopt);
+            else
+                values.push_back(sample.v);
+        }
+
+        const auto selected = VisibilityMath::visibilityTransitionIndices(
+            values, kind);
+        for (const std::size_t index : selected)
+        {
+            const auto& sample = *kindSamples[index];
+            const auto navigationTime = VisibilityMath::chooseNavigationTime(
+                mode, kind, sample.solarEventJd, sample.bestTimeJd,
+                sample.bestTimeMoonAltitudeDeg);
+            if (!navigationTime)
+                continue;
+            events.push_back(
+                {navigationTime->jd, sample.conjunctionJde,
+                 sample.dayIndex, kind, mode, navigationTime->basis});
+        }
+    };
+
+    appendKind(VisibilityMath::CrescentEventKind::Morning);
+    appendKind(VisibilityMath::CrescentEventKind::Evening);
     VisibilityMath::sortCrescentEvents(events);
     events.erase(std::unique(events.begin(), events.end(),
-                             [](const auto& a, const auto& b)
+                             [](const auto& first, const auto& second)
                              {
-                                 return std::abs(a.jd - b.jd) < NAVIGATION_EPSILON_DAYS;
+                                 return std::abs(first.jd - second.jd)
+                                        < NAVIGATION_EPSILON_DAYS;
                              }),
                  events.end());
     return events;
@@ -1115,7 +1265,7 @@ StelPluginInfo VisibilityContoursStelPluginInterface::getPluginInfo() const
 {
     StelPluginInfo info;
     info.id = "VisibilityContours";
-    info.displayedName = tr("Visibility Contours");
+    info.displayedName = tr("Crescent Visibility & Hijri Date");
     info.authors = tr("Sultan ALKHULAIFI");
     info.contact = "qlifee@gmail.com";
     info.description = tr("Draws selectable Odeh and Yallop lunar-crescent visibility bands and reports observational V and best time.")
@@ -1163,8 +1313,7 @@ VisibilityContours::VisibilityContours()
     , cachedHijriLatitude(std::numeric_limits<double>::quiet_NaN())
     , cachedHijriLongitude(std::numeric_limits<double>::quiet_NaN())
     , cachedHijriAltitude(std::numeric_limits<int>::min())
-    , cachedHijriDate{{0, 0, 0}, {0, 0, 0}}
-    , cachedHijriAvailable(false)
+    , cachedHijriResult{}
     , cachedHijriEventsConjunctionJde(
           std::numeric_limits<double>::quiet_NaN())
     , cachedHijriEventsNextConjunctionJde(
@@ -1186,6 +1335,7 @@ VisibilityContours::VisibilityContours()
 
 VisibilityContours::~VisibilityContours()
 {
+    clearNavigatorSampleCache();
     delete navigatorDialog;
     delete configDialog;
     delete settings;
@@ -1330,6 +1480,7 @@ void VisibilityContours::addMoonInformation(StelCore* core)
     const double currentJd = core->getJD();
     const double currentJde = core->getJDE();
     const QString currentTimeZone = core->getCurrentTimeZone();
+    const double latitude = location.getLatitude();
     const bool hijriCacheValid =
         std::isfinite(cachedHijriValidFromJd)
         && std::isfinite(cachedHijriValidUntilJd)
@@ -1341,95 +1492,156 @@ void VisibilityContours::addMoonInformation(StelCore* core)
         && currentTimeZone == cachedHijriTimeZone;
     if (!hijriCacheValid)
     {
-        const bool cacheLocationMatches =
-            location.getLatitude() == cachedHijriEventsLatitude
-            && location.getLongitude() == cachedHijriEventsLongitude
-            && location.altitude == cachedHijriEventsAltitude
-            && currentTimeZone == cachedHijriEventsTimeZone;
-        const bool eventCacheValid = cacheLocationMatches
-            && VisibilityMath::lunationCacheCoversJde(
-                currentJde, cachedHijriEventsConjunctionJde,
-                cachedHijriEventsNextConjunctionJde);
-        if (!eventCacheValid)
+        const auto latitudePolicy =
+            VisibilityMath::hijriLatitudePolicy(latitude);
+        if (latitudePolicy
+            != VisibilityMath::HijriLatitudePolicy::Unsupported)
         {
-            double precedingConjunctionJde = 0.0;
-            const bool havePrecedingConjunction = findPrecedingConjunction(
-                core, solarSystem, sun, moon, earth, currentJde,
-                precedingConjunctionJde);
-            const bool sameConjunctionCache = havePrecedingConjunction
-            && std::isfinite(cachedHijriEventsConjunctionJde)
-            && std::abs(precedingConjunctionJde
-                        - cachedHijriEventsConjunctionJde) < 1e-6
-            && cacheLocationMatches;
-            if (!sameConjunctionCache)
+            const bool cacheLocationMatches =
+                latitude == cachedHijriEventsLatitude
+                && location.getLongitude() == cachedHijriEventsLongitude
+                && location.altitude == cachedHijriEventsAltitude
+                && currentTimeZone == cachedHijriEventsTimeZone;
+            const bool eventCacheValid = cacheLocationMatches
+                && VisibilityMath::lunationCacheCoversJde(
+                    currentJde, cachedHijriEventsConjunctionJde,
+                    cachedHijriEventsNextConjunctionJde);
+            if (!eventCacheValid)
             {
                 cachedHijriEvents.clear();
+                double precedingConjunctionJde = 0.0;
+                const bool havePrecedingConjunction =
+                    findPrecedingConjunction(
+                        core, solarSystem, sun, moon, earth,
+                        currentJde, precedingConjunctionJde);
                 if (havePrecedingConjunction)
                 {
-                    double previousConjunctionJde = 0.0;
-                    if (findAdjacentConjunction(
-                            core, solarSystem, sun, moon, earth,
-                            precedingConjunctionJde, -1,
-                            previousConjunctionJde))
+                    const int maximumDayIndex =
+                        *VisibilityMath::hijriMaximumConjunctionBin(
+                            latitude);
+                    double conjunctionJde = precedingConjunctionJde;
+                    for (int historyIndex = 0;
+                         historyIndex
+                             < VisibilityMath::MAX_HIJRI_HISTORY_LUNATIONS;
+                         ++historyIndex)
                     {
-                        auto previousEvents =
+                        cachedHijriEvents.push_back(
                             hijriVisibilityEventsForConjunction(
                                 core, sun, moon, earth,
-                                previousConjunctionJde);
-                        cachedHijriEvents.insert(cachedHijriEvents.end(),
-                                                 previousEvents.begin(),
-                                                 previousEvents.end());
+                                conjunctionJde, maximumDayIndex));
+                        const auto anchors =
+                            VisibilityMath::hijriHistoryAnchorCoverage(
+                                cachedHijriEvents, currentJd, latitude);
+                        // The active lunation must be replayed from an older
+                        // synchronization anchor; otherwise opening the Moon
+                        // panel after its crossing would lose premature-start
+                        // history and make the result access-order dependent.
+                        if (historyIndex > 0 && anchors[0] && anchors[1])
+                            break;
+                        if (historyIndex + 1
+                            >= VisibilityMath::MAX_HIJRI_HISTORY_LUNATIONS)
+                            break;
+
+                        double previousConjunctionJde = 0.0;
+                        if (!findAdjacentConjunction(
+                                core, solarSystem, sun, moon, earth,
+                                conjunctionJde, -1,
+                                previousConjunctionJde))
+                            break;
+                        conjunctionJde = previousConjunctionJde;
                     }
-                    auto currentEvents = hijriVisibilityEventsForConjunction(
-                        core, sun, moon, earth, precedingConjunctionJde);
-                    cachedHijriEvents.insert(cachedHijriEvents.end(),
-                                             currentEvents.begin(),
-                                             currentEvents.end());
+                    std::sort(cachedHijriEvents.begin(),
+                              cachedHijriEvents.end(),
+                              [](const auto& first, const auto& second)
+                              {
+                                  return first.conjunctionJde
+                                         < second.conjunctionJde;
+                              });
                     cachedHijriEventsConjunctionJde =
                         precedingConjunctionJde;
+
+                    double nextConjunctionJde = 0.0;
+                    cachedHijriEventsNextConjunctionJde =
+                        findAdjacentConjunction(
+                            core, solarSystem, sun, moon, earth,
+                            precedingConjunctionJde, 1,
+                            nextConjunctionJde)
+                            ? nextConjunctionJde
+                            : std::numeric_limits<double>::quiet_NaN();
                 }
                 else
                 {
                     cachedHijriEventsConjunctionJde =
                         std::numeric_limits<double>::quiet_NaN();
+                    cachedHijriEventsNextConjunctionJde =
+                        std::numeric_limits<double>::quiet_NaN();
                 }
-                cachedHijriEventsLatitude = location.getLatitude();
+                cachedHijriEventsLatitude = latitude;
                 cachedHijriEventsLongitude = location.getLongitude();
                 cachedHijriEventsAltitude = location.altitude;
                 cachedHijriEventsTimeZone = currentTimeZone;
             }
-            double nextConjunctionJde = 0.0;
+
+            // A cache first built late in the lunation may have stopped at an
+            // anchor within that same lunation. If the clock then moves back
+            // before that sunset, extend the cached history lazily instead of
+            // reporting a transient unavailable date.
+            auto anchors = VisibilityMath::hijriHistoryAnchorCoverage(
+                cachedHijriEvents, currentJd, latitude);
+            const int maximumDayIndex =
+                *VisibilityMath::hijriMaximumConjunctionBin(latitude);
+            while ((!anchors[0] || !anchors[1])
+                   && !cachedHijriEvents.empty()
+                   && cachedHijriEvents.size()
+                          < static_cast<std::size_t>(
+                              VisibilityMath::MAX_HIJRI_HISTORY_LUNATIONS))
+            {
+                double previousConjunctionJde = 0.0;
+                if (!findAdjacentConjunction(
+                        core, solarSystem, sun, moon, earth,
+                        cachedHijriEvents.front().conjunctionJde, -1,
+                        previousConjunctionJde))
+                    break;
+                cachedHijriEvents.insert(
+                    cachedHijriEvents.begin(),
+                    hijriVisibilityEventsForConjunction(
+                        core, sun, moon, earth,
+                        previousConjunctionJde, maximumDayIndex));
+                anchors = VisibilityMath::hijriHistoryAnchorCoverage(
+                    cachedHijriEvents, currentJd, latitude);
+            }
+        }
+        else
+        {
+            // Above the supported latitude boundary there is deliberately no
+            // proxy-location or ephemeris-history calculation.
+            cachedHijriEvents.clear();
+            cachedHijriEventsConjunctionJde =
+                std::numeric_limits<double>::quiet_NaN();
             cachedHijriEventsNextConjunctionJde =
-                havePrecedingConjunction
-                && findAdjacentConjunction(
-                    core, solarSystem, sun, moon, earth,
-                    precedingConjunctionJde, 1,
-                    nextConjunctionJde)
-                    ? nextConjunctionJde
-                    : std::numeric_limits<double>::quiet_NaN();
+                std::numeric_limits<double>::quiet_NaN();
         }
         const ObservationalHijriCalculation calculation =
             calculateObservationalHijriDate(
-                core, sun, currentJd, cachedHijriEvents);
+                core, sun, currentJd, latitude,
+                cachedHijriEvents);
         cachedHijriValidFromJd = calculation.validFromJd;
         cachedHijriValidUntilJd = calculation.validUntilJd;
-        cachedHijriLatitude = location.getLatitude();
+        cachedHijriLatitude = latitude;
         cachedHijriLongitude = location.getLongitude();
         cachedHijriAltitude = location.altitude;
         cachedHijriTimeZone = currentTimeZone;
-        cachedHijriAvailable = calculation.date.has_value();
-        cachedHijriDate = calculation.date.value_or(
-            VisibilityMath::ObservationalHijriDate{
-                {0, 0, 0}, {0, 0, 0}});
+        cachedHijriResult = calculation.result;
     }
 
-    const QString hijriDateText = cachedHijriAvailable
+    const QString hijriDateText =
+        VisibilityMath::observationalHijriAvailable(cachedHijriResult)
         ? QString::fromStdString(
               VisibilityMath::formatObservationalHijriDate(
-                  cachedHijriDate))
+                  cachedHijriResult.date))
         : QString();
     if (navigatorShown && navigatorDialog)
-        navigatorDialog->setObservationalHijriDate(hijriDateText);
+        navigatorDialog->setObservationalHijriResult(cachedHijriResult);
 
     const auto ltrValue = [](const QString& value)
     {
@@ -1437,13 +1649,33 @@ void VisibilityContours::addMoonInformation(StelCore* core)
     };
     const auto addHijriInformation = [&]()
     {
-        if (cachedHijriAvailable)
+        if (VisibilityMath::observationalHijriAvailable(cachedHijriResult))
         {
             moon->addToExtraInfoString(
                 StelObject::OtherCoord,
                 tr("Hijri date: %1<br/>")
                     .arg(QStringLiteral("<b>%1</b>")
                              .arg(ltrValue(hijriDateText))));
+            if (cachedHijriResult.latitudePolicy
+                == VisibilityMath::HijriLatitudePolicy::FollowLowerLatitude)
+            {
+                moon->addToExtraInfoString(
+                    StelObject::OtherCoord,
+                    tr("Follow date of lower latitude.<br/>"));
+            }
+            if (cachedHijriResult.calculatedPrematureStart)
+            {
+                moon->addToExtraInfoString(
+                    StelObject::OtherCoord,
+                    tr("Possible premature start<br/>"));
+            }
+        }
+        else if (cachedHijriResult.availability
+                 == VisibilityMath::HijriAvailabilityReason::LatitudeUnsupported)
+        {
+            moon->addToExtraInfoString(
+                StelObject::OtherCoord,
+                tr("Hijri date: Not available; follow date of lower latitude<br/>"));
         }
         else
         {
@@ -1748,8 +1980,8 @@ void VisibilityContours::navigateToCrescent(
     std::optional<VisibilityMath::CrescentEvent> destination;
     for (int lunation = 0; lunation < MAX_NAVIGATOR_LUNATIONS; ++lunation)
     {
-        const auto events = crescentEventsForConjunction(core, sun, moon,
-                                                          conjunctionJde, mode);
+        const auto events = crescentTransitionEventsForConjunction(
+            core, sun, moon, earth, conjunctionJde, mode);
         destination = VisibilityMath::adjacentCrescentEvent(
             events, currentJd, direction, navigatorEventFilter,
             NAVIGATION_EPSILON_DAYS);
@@ -1810,9 +2042,8 @@ void VisibilityContours::navigateToCrescent(
         year, month, day, destination->kind);
     const bool gregorianCalendar =
         VisibilityMath::isGregorianCalendarDate(year, month, day);
-    navigatorDialog->setEventStatus(destination->kind, destination->dayIndex,
+    navigatorDialog->setEventStatus(destination->kind,
                                     localDate, gregorianCalendar,
-                                    destination->basis,
                                     hijri ? hijri->year : 0,
                                     hijri ? hijri->month : 0);
     qInfo() << "VisibilityContours navigator selected"

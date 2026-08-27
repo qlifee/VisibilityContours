@@ -87,15 +87,14 @@ private:
     double cachedHijriLongitude;
     int cachedHijriAltitude;
     QString cachedHijriTimeZone;
-    VisibilityMath::ObservationalHijriDate cachedHijriDate;
-    bool cachedHijriAvailable;
+    VisibilityMath::ObservationalHijriResult cachedHijriResult;
     double cachedHijriEventsConjunctionJde;
     double cachedHijriEventsNextConjunctionJde;
     double cachedHijriEventsLatitude;
     double cachedHijriEventsLongitude;
     int cachedHijriEventsAltitude;
     QString cachedHijriEventsTimeZone;
-    std::vector<VisibilityMath::HijriVisibilityEvent> cachedHijriEvents;
+    std::vector<VisibilityMath::HijriLunationEvents> cachedHijriEvents;
     QString selectedCriterion;
     bool bandsFilled;
     bool navigatorShown;

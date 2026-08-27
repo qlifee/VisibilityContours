@@ -19,6 +19,8 @@
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSettings>
+#include <QSizePolicy>
+#include <QStringList>
 #include <QToolTip>
 
 CrescentNavigatorDialog::CrescentNavigatorDialog(VisibilityContours* contours)
@@ -29,8 +31,6 @@ CrescentNavigatorDialog::CrescentNavigatorDialog(VisibilityContours* contours)
     , pendingMessage(StatusMessage::Ready)
     , pendingIsEvent(false)
     , pendingEventKind(VisibilityMath::CrescentEventKind::Morning)
-    , pendingEventBasis(VisibilityMath::EventTimeBasis::BestTime)
-    , pendingDayIndex(0)
     , pendingGregorianCalendar(true)
     , pendingObservationalHijriResolved(false)
     , pendingHijriYear(0)
@@ -55,6 +55,7 @@ void CrescentNavigatorDialog::createDialogContent()
     dialog->installEventFilter(this);
     applyTextContrast();
     updateHijriHeadingFont();
+    updateDynamicHeaderGeometry();
     hoverTooltip = new QLabel(dialog);
     hoverTooltip->setObjectName(QStringLiteral("visibilityContoursHoverTooltip"));
     hoverTooltip->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -127,6 +128,7 @@ bool CrescentNavigatorDialog::eventFilter(QObject* watched, QEvent* event)
             || event->type() == QEvent::FontChange))
     {
         updateHijriHeadingFont();
+        updateDynamicHeaderGeometry();
         dialog->adjustSize();
     }
     auto* button = qobject_cast<QPushButton*>(watched);
@@ -153,10 +155,12 @@ void CrescentNavigatorDialog::configureButtonTooltips()
         button->setToolTip(QString());
         button->setMouseTracking(true);
     };
-    configure(ui->backButton, tr("Previous Moon best time"));
-    configure(ui->forwardButton, tr("Next Moon best time"));
-    configure(ui->allBackButton, tr("Previous Moon event"));
-    configure(ui->allForwardButton, tr("Next Moon event"));
+    configure(ui->backButton, tr("Previous Moon-up visibility transition"));
+    configure(ui->forwardButton, tr("Next Moon-up visibility transition"));
+    configure(ui->allBackButton,
+              tr("Previous visibility transition, Moon up or down"));
+    configure(ui->allForwardButton,
+              tr("Next visibility transition, Moon up or down"));
 }
 
 void CrescentNavigatorDialog::showButtonTooltip(
@@ -236,31 +240,30 @@ void CrescentNavigatorDialog::setStatusMessage(StatusMessage message)
 }
 
 void CrescentNavigatorDialog::setEventStatus(
-    VisibilityMath::CrescentEventKind kind, int dayIndex,
-    const QString& localDate, bool gregorianCalendar,
-    VisibilityMath::EventTimeBasis basis, int hijriYear, int hijriMonth)
+    VisibilityMath::CrescentEventKind kind, const QString& localDate,
+    bool gregorianCalendar, int hijriYear, int hijriMonth)
 {
     pendingIsEvent = true;
     pendingEventKind = kind;
-    pendingEventBasis = basis;
-    pendingDayIndex = dayIndex;
     pendingLocalDate = localDate;
     pendingGregorianCalendar = gregorianCalendar;
-    pendingObservationalHijriDate.clear();
+    pendingObservationalHijriResult = {};
     pendingObservationalHijriResolved = false;
     pendingHijriYear = hijriYear;
     pendingHijriMonth = hijriMonth;
     applyStatus();
 }
 
-void CrescentNavigatorDialog::setObservationalHijriDate(const QString& date)
+void CrescentNavigatorDialog::setObservationalHijriResult(
+    const VisibilityMath::ObservationalHijriResult& result)
 {
     if (!pendingIsEvent)
         return;
     if (pendingObservationalHijriResolved
-        && pendingObservationalHijriDate == date)
+        && VisibilityMath::sameObservationalHijriResult(
+            pendingObservationalHijriResult, result))
         return;
-    pendingObservationalHijriDate = date;
+    pendingObservationalHijriResult = result;
     pendingObservationalHijriResolved = true;
     applyStatus();
 }
@@ -283,6 +286,7 @@ void CrescentNavigatorDialog::retranslate()
     {
         ui->retranslateUi(dialog);
         updateHijriHeadingFont();
+        updateDynamicHeaderGeometry();
         configureButtonTooltips();
         updateEventFilterDirection();
         applyStatus();
@@ -296,7 +300,6 @@ void CrescentNavigatorDialog::applyTextContrast()
 
     const QString whiteText = QStringLiteral("color: rgb(255, 255, 255);");
     ui->hijriLabel->setStyleSheet(whiteText);
-    ui->statusLabel->setStyleSheet(whiteText);
     ui->timeLabel->setStyleSheet(whiteText);
     ui->navigateLabel->setStyleSheet(whiteText);
     ui->moonUpOnlyLabel->setStyleSheet(whiteText);
@@ -322,6 +325,100 @@ void CrescentNavigatorDialog::updateHijriHeadingFont()
             qMax(1, qRound(headingFont.pixelSize() * 1.5)));
     headingFont.setBold(true);
     ui->hijriLabel->setFont(headingFont);
+}
+
+void CrescentNavigatorDialog::updateDynamicHeaderGeometry()
+{
+    if (!dialog)
+        return;
+
+    const QMargins margins = ui->contentLayout->contentsMargins();
+    const int availableWidth = qMax(
+        1, dialog->minimumWidth() - margins.left() - margins.right());
+    const auto reserveHeight = [availableWidth](
+        QLabel* label, const QStringList& candidates)
+    {
+        QLabel probe;
+        probe.setFont(label->font());
+        probe.setAlignment(label->alignment());
+        probe.setTextFormat(label->textFormat());
+        probe.setWordWrap(true);
+        probe.setMargin(label->margin());
+        probe.setIndent(label->indent());
+        probe.setFixedWidth(availableWidth);
+
+        int maximumHeight = 0;
+        for (const QString& text : candidates)
+        {
+            probe.setText(text);
+            int height = probe.heightForWidth(availableWidth);
+            if (height < 0)
+            {
+                probe.adjustSize();
+                height = probe.height();
+            }
+            maximumHeight = qMax(maximumHeight, height);
+        }
+
+        // Ignore text width so different month names cannot widen the dialog,
+        // and reserve the tallest translated variant so the controls below do
+        // not move between Navigator events.
+        label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        label->setFixedHeight(maximumHeight + 2);
+        label->setVisible(true);
+    };
+
+    QStringList headingCandidates;
+    for (int month = 1; month <= 12; ++month)
+    {
+        const QString monthName = hijriMonthName(month);
+        headingCandidates.append(
+            tr("End of %1 %2 AH").arg(monthName).arg(1448));
+        headingCandidates.append(
+            tr("Beginning of %1 %2 AH").arg(monthName).arg(1448));
+    }
+    reserveHeight(ui->hijriLabel, headingCandidates);
+
+    const auto line = [](const QString& text, bool bold = false)
+    {
+        return QStringLiteral("<div>%1%2%3</div>")
+            .arg(bold ? QStringLiteral("<b>") : QString(),
+                 text.toHtmlEscaped(),
+                 bold ? QStringLiteral("</b>") : QString());
+    };
+    const QString gregorian =
+        tr("Gregorian date:") + QStringLiteral(" 2026-08-18");
+    const QString julian =
+        tr("Julian date:") + QStringLiteral(" 1200-03-04");
+    const QString hijri =
+        tr("Hijri date:")
+        + QStringLiteral(" 01/04/-0054 - 30/03/-0054");
+    const QString warnings =
+        line(tr("Follow date of lower latitude."))
+        + line(tr("Possible premature start"));
+    QStringList dateCandidates;
+    dateCandidates.append(line(gregorian, true) + line(hijri, true)
+                          + warnings);
+    dateCandidates.append(line(julian, true) + line(hijri, true)
+                          + warnings);
+    dateCandidates.append(
+        line(gregorian, true)
+        + line(tr("Hijri date: Not available; follow date of lower latitude"),
+               true));
+    dateCandidates.append(
+        line(julian, true)
+        + line(tr("Hijri date: Not available; follow date of lower latitude"),
+               true));
+    dateCandidates.append(
+        line(gregorian, true)
+        + line(tr("Hijri date:") + QStringLiteral(" ")
+                   + tr("Not available"), true));
+    dateCandidates.append(
+        line(tr("Moon navigation is available only on Earth")));
+    dateCandidates.append(line(tr("Moon navigation is not available")));
+    dateCandidates.append(line(tr("No valid Moon event found")));
+    dateCandidates.append(line(tr("Ready")));
+    reserveHeight(ui->timeLabel, dateCandidates);
 }
 
 void CrescentNavigatorDialog::updateEventFilterDirection()
@@ -387,27 +484,6 @@ void CrescentNavigatorDialog::applyStatus()
         return;
     if (pendingIsEvent)
     {
-        const QString kind = pendingEventKind == VisibilityMath::CrescentEventKind::Morning
-                                 ? tr("Morning") : tr("Evening");
-        QString basis;
-        switch (pendingEventBasis)
-        {
-        case VisibilityMath::EventTimeBasis::Sunrise:
-            basis = tr("Sunrise");
-            break;
-        case VisibilityMath::EventTimeBasis::Sunset:
-            basis = tr("Sunset");
-            break;
-        case VisibilityMath::EventTimeBasis::BestTime:
-        default:
-            basis = tr("Best time");
-            break;
-        }
-        const QString dayText = pendingDayIndex >= 0
-                                    ? QStringLiteral("+%1").arg(pendingDayIndex)
-                                    : QString::number(pendingDayIndex);
-        ui->statusLabel->setText(
-            tr("%1 · day %2 · %3").arg(kind, dayText, basis));
         const QString language =
             StelApp::getInstance().getLocaleMgr().getAppLanguage();
         const bool useRightToLeft =
@@ -426,19 +502,53 @@ void CrescentNavigatorDialog::applyStatus()
                      pendingLocalDate.toHtmlEscaped());
         if (pendingObservationalHijriResolved)
         {
-            const QString hijriDate = pendingObservationalHijriDate.isEmpty()
-                                          ? tr("Not available")
-                                          : pendingObservationalHijriDate;
-            dateLines +=
-                QStringLiteral("<div dir=\"%1\"><b>%2 "
-                               "<span dir=\"ltr\">%3</span></b></div>")
-                    .arg(direction, tr("Hijri date:").toHtmlEscaped(),
-                         hijriDate.toHtmlEscaped());
+            const auto& result = pendingObservationalHijriResult;
+            if (VisibilityMath::observationalHijriAvailable(result))
+            {
+                const QString hijriDate = QString::fromStdString(
+                    VisibilityMath::formatObservationalHijriDate(
+                        result.date));
+                dateLines +=
+                    QStringLiteral("<div dir=\"%1\"><b>%2 "
+                                   "<span dir=\"ltr\">%3</span></b></div>")
+                        .arg(direction, tr("Hijri date:").toHtmlEscaped(),
+                             hijriDate.toHtmlEscaped());
+                if (result.latitudePolicy
+                    == VisibilityMath::HijriLatitudePolicy::FollowLowerLatitude)
+                {
+                    dateLines += QStringLiteral("<div dir=\"%1\">%2</div>")
+                        .arg(direction,
+                             tr("Follow date of lower latitude.")
+                                 .toHtmlEscaped());
+                }
+                if (result.calculatedPrematureStart)
+                {
+                    dateLines += QStringLiteral("<div dir=\"%1\">%2</div>")
+                        .arg(direction,
+                             tr("Possible premature start")
+                                 .toHtmlEscaped());
+                }
+            }
+            else if (result.availability
+                     == VisibilityMath::HijriAvailabilityReason::LatitudeUnsupported)
+            {
+                dateLines +=
+                    QStringLiteral("<div dir=\"%1\"><b>%2</b></div>")
+                        .arg(direction,
+                             tr("Hijri date: Not available; follow date of lower latitude")
+                                 .toHtmlEscaped());
+            }
+            else
+            {
+                dateLines +=
+                    QStringLiteral("<div dir=\"%1\"><b>%2 %3</b></div>")
+                        .arg(direction, tr("Hijri date:").toHtmlEscaped(),
+                             tr("Not available").toHtmlEscaped());
+            }
         }
         ui->timeLabel->setText(dateLines);
         const QString monthName = hijriMonthName(pendingHijriMonth);
         const bool validHijri = !monthName.isEmpty() && pendingHijriYear != 0;
-        ui->hijriLabel->setVisible(validHijri);
         if (validHijri)
         {
             ui->hijriLabel->setText(
@@ -446,6 +556,8 @@ void CrescentNavigatorDialog::applyStatus()
                     ? tr("End of %1 %2 AH").arg(monthName).arg(pendingHijriYear)
                     : tr("Beginning of %1 %2 AH").arg(monthName).arg(pendingHijriYear));
         }
+        else
+            ui->hijriLabel->clear();
     }
     else
     {
@@ -466,10 +578,16 @@ void CrescentNavigatorDialog::applyStatus()
             status = tr("Ready");
             break;
         }
-        ui->statusLabel->setText(status);
-        ui->timeLabel->clear();
+        const QString language =
+            StelApp::getInstance().getLocaleMgr().getAppLanguage();
+        const QString direction =
+            VisibilityMath::useArabicForProgramLanguage(
+                language.toStdString())
+                ? QStringLiteral("rtl") : QStringLiteral("ltr");
+        ui->timeLabel->setText(
+            QStringLiteral("<div dir=\"%1\">%2</div>")
+                .arg(direction, status.toHtmlEscaped()));
         ui->hijriLabel->clear();
-        ui->hijriLabel->setVisible(false);
     }
     dialog->adjustSize();
 }
